@@ -1,0 +1,70 @@
+Date: 9/10/2024
+Time: 17:58
+Phone Number: +923289287491
+Message: Hello, this is a test message.
+--------------------
+Date: 10/10/2024
+Time: 18:16
+Phone Number: +923289287491
+Message: hello this is a test
+--------------------
+Date: 10/10/2024
+Time: 18:37
+Phone Number: +923289287491
+Message: the test was completed!
+--------------------
+Date: 13/10/2024
+Time: 23:40
+Phone Number: +923124681701
+Message: Hello, this is a test message!
+--------------------
+Date: 13/10/2024
+Time: 23:44
+Phone Number: +923124681701
+Message: Hello from Code Buddy!
+--------------------
+Date: 13/10/2024
+Time: 23:47
+Phone Number: +923124681701
+Message: Hello, this is a test message.
+--------------------
+Date: 13/10/2024
+Time: 23:51
+Phone Number: +923124681701
+Message: Hello, this is a test message.
+--------------------
+Date: 13/10/2024
+Time: 23:53
+Phone Number: +923124681701
+Message: Hello, this is a test message.
+--------------------
+Date: 14/10/2024
+Time: 0:0
+Phone Number: +923124681701
+Message: 1: Hello, this is a test message.
+--------------------
+Date: 14/10/2024
+Time: 0:0
+Phone Number: +923124681701
+Message: 2: Hello, this is a test message.
+--------------------
+Date: 14/10/2024
+Time: 0:0
+Phone Number: +923124681701
+Message: 3: Hello, this is a test message.
+--------------------
+Date: 14/10/2024
+Time: 0:0
+Phone Number: +923124681701
+Message: 4: Hello, this is a test message.
+--------------------
+Date: 14/10/2024
+Time: 0:5
+Phone Number: +923124681701
+Message: The 12 - 6 + 71 - 32 is: 45
+--------------------
+Date: 14/10/2024
+Time: 0:9
+Phone Number: +923124681701
+Message: The 71 - 32 is: 39
+--------------------
