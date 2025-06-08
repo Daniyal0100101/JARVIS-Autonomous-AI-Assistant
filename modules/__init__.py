@@ -14,8 +14,8 @@ contacts = {
 }
 
 # API keys path
-WEATHER_API_KEY_PATH = r"C:\Users\DANIYAL\OneDrive\Documents\Program & Projacts\Hands-on Projects\AI Projacts\Jarvis AI Assistant\Requirements\weather api key.txt"
-EMAIL_CREDENTIALS_PATH = r"C:\Users\DANIYAL\OneDrive\Documents\Program & Projacts\Hands-on Projects\AI Projacts\Jarvis AI Assistant\Requirements\email_credentials.txt"
+WEATHER_API_KEY_PATH = r"C:\Users\DANIYAL\OneDrive\Documents\Program and Projacts\Hands-on Projects\AI Projacts\Jarvis AI Assistant\Requirements\weather api key.txt"
+EMAIL_CREDENTIALS_PATH = r"C:\Users\DANIYAL\OneDrive\Documents\Program and Projacts\Hands-on Projects\AI Projacts\Jarvis AI Assistant\Requirements\email_credentials.txt"
 
 # Define constants
 NOTE_FILE_PATH = "notes.txt"

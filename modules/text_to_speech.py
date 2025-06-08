@@ -13,7 +13,9 @@ def generate_audio(message: str, voice: str = "Matthew") -> Union[None, bytes]:
     :param voice: Voice to use for speech synthesis.
     :return: Audio content as bytes or None if the request fails.
     """
-    url = f"https://api.streamelements.com/kappa/v2/speech?voice={voice}&text={message}"
+    # URL encode the message to handle spaces and special characters
+    encoded_message = requests.utils.quote(message)
+    url = f"https://api.streamelements.com/kappa/v2/speech?voice={voice}&text={encoded_message}"
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
     }

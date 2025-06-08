@@ -10,7 +10,7 @@ import logging
 # Disable all logging in the application
 logging.disable(logging.CRITICAL)
 
-# Hash the imported password
+# Hash the imported password 
 STORED_PASSWORD_HASH = hashlib.sha256(stored_password.encode()).hexdigest()
 
 def authenticate_user(attempts: int = 3):  # Allow three attempts
@@ -123,8 +123,8 @@ def handle_query_input(query, mode, online):
 
 def main():
     """Main function that initializes the AI assistant and handles user interactions."""
-    if not authenticate_user():
-        return  # Exit if authentication fails
+    # if not authenticate_user():
+    #     return  # Exit if authentication fails
 
     online = is_connected()
     greeting = get_greeting(online)
@@ -133,7 +133,7 @@ def main():
     print(f"\n{separator}\n{greeting}\n{separator}\n")
     speak(greeting)
 
-    mode = 'text' if not online else 'voice'
+    mode = 'text'  # Just to start in text mode; 'text' if not online else 'voice'
 
     while True:
         try:

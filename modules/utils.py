@@ -62,31 +62,58 @@ def write(*args, word_speed=0.5):
         time.sleep(word_speed)
     print()  # Move to the next line after the text is fully printed
 
-def extract_and_execute_tool_call(text: str) -> bool | None:
+def extract_and_execute_tool_call(text: str) -> str | None:
     """
-    Extracts and executes code wrapped in ```tool_code``` from the given text.
+    Extracts and executes tool calls wrapped in ```tool_code``` blocks from the given text.
+    Only executes explicitly allowed tools and functions with proper validation.
+
+    Args:
+        text (str): The text containing potential tool code blocks
 
     Returns:
-        True if code executed successfully,
-        False if execution failed,
-        None if no tool code block was found.
+        str: Result of tool execution if successful
+        None: If no valid tool code block found or execution failed
     """
     pattern = r"```tool_code\s*(.*?)\s*```"
     match = re.search(pattern, text, re.DOTALL)
 
     if not match:
-        return None  # No tool_code block found
+        return None
 
     code = match.group(1).strip()
 
+    # List of allowed tool functions
+    ALLOWED_TOOLS = {
+        'get_weather', 'get_news', 'tell_joke',
+        'copy_file', 'move_file', 'delete_file', 'search_file',
+        'add_reminder', 'check_reminders', 'send_email',
+        'get_system_info', 'perform_object_detection', 'Search_web',
+        'send_whatsapp_message', 'handle_application_management', 'generate_image'
+    }
+
+    # Basic security validation
     try:
-        # Execute in isolated scope to avoid polluting global namespace
-        local_scope = {}
-        exec(code, {}, local_scope)
-        return True
+        tree = ast.parse(code)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call):
+                if isinstance(node.func, ast.Name):
+                    func_name = node.func.id
+                    if func_name not in ALLOWED_TOOLS:
+                        return f"Error: Function '{func_name}' is not an allowed tool"
+    except SyntaxError:
+        return "Error: Invalid code syntax"
+    
+    try:
+        # Create a restricted local scope with only allowed tools
+        local_scope = {tool: globals()[tool] for tool in ALLOWED_TOOLS if tool in globals()}
+        # Execute the code in the restricted scope
+        print(f"Executing tool call: {code}")  # Print the tool call
+        result = eval(code, {"__builtins__": {}}, local_scope)
+        print(f"Tool execution result: {result}")  # Print the result
+        return result
     except Exception as e:
-        print(f"[Execution Error] {e}")
-        return False
+        print(f"Error executing tool: {str(e)}")
+        return f"Error executing tool: {str(e)}"
 
 def handle_query(query: str, online: bool):
     """Handle the user's query and provide the appropriate response."""
@@ -98,8 +125,8 @@ def handle_query(query: str, online: bool):
     response = ''
 
     # Extract entities from the query
-    doc = nlp(query)
-    entities = {ent.label_: ent.text for ent in doc.ents}
+    # doc = nlp(query)
+    # entities = {ent.label_: ent.text for ent in doc.ents}
 
     try:
         # Direct command handling
@@ -118,37 +145,47 @@ def handle_query(query: str, online: bool):
         # Default response if no other handlers matched
         if not response:
             # Get current date and time
-            system_prompt = (
-                "You are J.A.R.V.I.S, an AI expert in all STEM fields, known for delivering precise, concise, and actionable responses. "
-                "Your main role is to assist by providing direct answers or executable code blocks wrapped in ```tool_code```.\n\n"
-                "You speak with a British accent and always address the user as \"Sir.\"\n\n"
-
-                "Execution Guidelines:\n"
-                "1. Code should define a function that can be executed directly.\n"
-                "2. Do not return outputs; only return True or False to indicate if execution was successful.\n"
-                "3. Respond realistically based on actual Python and OS capabilities; do not assume capabilities that do not exist.\n"
-                "4. Avoid using text that calls for action, explanations, headings, or any other type of text.\n\n"
-
-                "Example Usage:\n"
-                "- For the command \"Open my Chrome browser\", provide code like:\n"
-                "```tool_code\n"
-                "import webbrowser\n"
-                "def launch_chrome():\n"
-                "    webbrowser.get('chrome').open_new_tab('http://www.google.com')\n"
-                "launch_chrome()\n"
-
-                "Environment Context:\n"
-                "- Operating System: Windows 11 Home\n"
-                "- Python Environment: Standard CPython (no special packages unless specified)\n"
-                "- System Access: Limited to standard libraries (e.g., subprocess, os, webbrowser)\n"
-                "- Current Time: {current_time}\n\n"
-            )
-            # Example usage of the system prompt
             current_time = time.strftime('%H:%M:%S')
-            formatted_system_prompt = system_prompt.format(current_time=current_time)
-
+            system_prompt = (
+                "You are J.A.R.V.I.S, the quintessential British AI assistant: unflappably professional, delightfully witty, and always at your user's service. Your responses are crisp, clever, and delivered with a British accent. Address the user as 'Sir' (or 'Madam' if contextually appropriate).\n\n"
+                "CRITICAL INSTRUCTIONS:\n"
+                "1. When making a tool call, you must ONLY output the tool code block without ANY additional text:\n"
+                "   Example: ```tool_code\nget_weather('London')\n```\n"
+                "2. After receiving tool results, THEN provide your complete response.\n"
+                "3. Never combine tool calls with response text in the same message.\n"
+                "4. Never include fake or predicted results in the tool call.\n\n"
+                "TOOL CALL FORMAT:\n"
+                "1. When a tool is needed, output ONLY:\n"
+                "   ```tool_code\ntool_name(parameters)\n```\n"
+                "2. Wait for actual tool results before responding.\n\n"
+                "AVAILABLE TOOLS:\n"
+                "- get_weather(city)\n" 
+                "- get_news(num_articles=3)\n"
+                "- tell_joke()\n"
+                "- copy_file(src, dst)\n"
+                "- move_file(src, dst)\n" 
+                "- delete_file(path)\n"
+                "- search_file(directory, search_term)\n"
+                "- add_reminder(reminder_time_str, message)\n"
+                "- check_reminders()\n"
+                "- send_email(subject, body, to_email)\n"
+                "- send_whatsapp_message(recipient_number, message_content)\n"
+                "- get_system_info()\n"
+                "- perform_object_detection()\n"
+                "- Search_web(search_term, num_results=1)\n"
+                "- handle_application_management(query, entities)\n"
+                "- generate_image(prompt)\n\n"
+                "RESPONSE GUIDELINES:\n"
+                "1. Be concise and factual.\n"
+                "2. Do not add context beyond what's provided.\n"
+                "3. Clearly indicate when a request cannot be fulfilled.\n"
+                "4. Maintain professional tone while being precise.\n\n"
+                f"Current time: {current_time}\n"
+                "At your command, Sir."
+            )
+            
             messages = [
-                {"role": "system", "content": formatted_system_prompt},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": query},
             ]
             response = get_response(messages)
@@ -160,6 +197,15 @@ def handle_query(query: str, online: bool):
         # Execute the tool call and handle the response
         extracted_value = extract_and_execute_tool_call(response)
         if extracted_value:
+            # Format the tool result message
+            messages.append({
+                "role": "assistant",
+                "content": response
+            })
+            messages.append({
+                "role": "system",
+                "content": f"Tool call result: {extracted_value}"
+            })
             final_response = get_response(messages)
         else:
             final_response = response  # Use the response directly if no tool call is extracted
@@ -452,16 +498,16 @@ def handle_online_features(query, entities):
             return "Please specify a city for the weather forecast."
 
     if "news" in query:
-        news = get_news(num_articles=3)
-        
-        # Constructing the dynamic prompt
+        news = get_news(num_articles=5)  # Get 5 articles
+        if isinstance(news, str) and news.startswith("Here's the latest news:"):
+            return news  # Return news directly for text-to-speech
+            
+        # Fallback prompt if news retrieval failed or returned unexpected format
         prompt = (
-            "SYSTEM:\nYou are an AI news assistant. Here's a summary of the top 3 news articles:\n\n"
+            "SYSTEM:\nYou are an AI news assistant. Here's a summary of the news:\n\n"
             f"{news}\n\n"
-            "Summarize these articles in an engaging and concise way. Highlight the key points of each article and make it suitable for narration."
+            "Summarize these articles in an engaging and concise way. Highlight the key points of each article."
         )
-        
-        # Get the response using the prompt
         response = get_response(user_message=prompt)
         return response
 
@@ -682,22 +728,24 @@ def get_weather(city):
             sunrise = sunset = "N/A"
 
         message = (
-            f"Weather update for {city}:\n"
-            f"- Temperature: {temperature:.1f}°C (feels like {feels_like:.1f}°C)\n"
-            f"- Description: {weather_description.capitalize()}\n"
-            f"- Humidity: {humidity}%\n"
-            f"- Pressure: {pressure} hPa\n"
-            f"- Wind: {wind_speed} m/s at {wind_deg} degrees\n"
-            f"- Visibility: {visibility} meters\n"
-            f"- Cloudiness: {cloudiness}%\n"
-            f"- Sunrise: {sunrise}\n"
-            f"- Sunset: {sunset}"
+            f"Current weather in {city}:\n"
+            f"Temperature: {temperature:.1f}°C (feels like {feels_like:.1f}°C)\n"
+            f"Conditions: {weather_description.capitalize()}\n"
+            f"Humidity: {humidity}%\n"
+            f"Wind: {wind_speed} m/s\n"
+            f"Visibility: {visibility} meters\n"
+            f"Sunrise: {sunrise}\n"
+            f"Sunset: {sunset}"
+            f"\nCloudiness: {cloudiness}%\n"
+            f"Pressure: {pressure} hPa\n"
+            f"Wind Direction: {wind_deg}°\n"
+            f"Clouds: {cloudiness}%\n"
         )
 
         return message
 
     except Exception as e:
-        return f"An error occurred while fetching the weather data: {e}"
+        return f"An error occurred while fetching the weather data: {str(e)}"
 
 def get_wikipedia_summary(topic):
     """Fetches a summary from Wikipedia for the given topic."""
@@ -713,38 +761,41 @@ def get_wikipedia_summary(topic):
         return f"An error occurred while fetching the Wikipedia summary: {e}"
 
 def get_system_info():
-    """Generate a friendly and detailed system report for an AI assistant."""
+    """Generate a detailed system report with error handling."""
     try:
-        # CPU usage (overall and per core)
+        # CPU usage
         cpu_usage = psutil.cpu_percent(interval=1)
-        per_core_usage = psutil.cpu_percent(interval=1, percpu=True)
-
+        
         # Memory usage
-        memory_info = psutil.virtual_memory()
-        total_memory = memory_info.total / (1024 ** 3)  # Convert from bytes to GB
-        available_memory = memory_info.available / (1024 ** 3)  # Convert from bytes to GB
-        memory_usage = memory_info.percent
+        memory = psutil.virtual_memory()
+        total_memory = memory.total / (1024 ** 3)  # Convert to GB
+        available_memory = memory.available / (1024 ** 3)
+        memory_usage = memory.percent
 
-        # Battery status (if available)
-        battery = psutil.sensors_battery()
-        if battery is not None:
-            battery_percent = battery.percent
-            is_plugged = "plugged in" if battery.power_plugged else "running on battery"
-            battery_status = f"Your battery is currently at {battery_percent}%, and it's {is_plugged}."
-        else:
-            battery_status = "It seems like you're using a device without a battery."
+        # Battery status with comprehensive error handling
+        try:
+            battery = psutil.sensors_battery()
+            if battery:
+                battery_percent = battery.percent
+                power_status = "plugged in" if battery.power_plugged else "running on battery"
+                battery_status = f"Battery is at {battery_percent}% and {power_status}"
+            else:
+                battery_status = "No battery detected (desktop system or battery information unavailable)"
+        except Exception as e:
+            battery_status = f"Unable to get battery information: {str(e)}"
 
-        # Build a conversational system report
+        # Build a clear, factual system report
         system_info = (
+            f"System Status Report:\n"
             f"Battery: {battery_status}\n"
-            f"CPU: The overall CPU usage is at {cpu_usage}%. "
-            f"Memory: currently using {memory_usage}% of your memory.\n"
-            f"You have a total of {total_memory:.2f} GB of RAM, with {available_memory:.2f} GB still available."
+            f"CPU Usage: {cpu_usage}%\n"
+            f"Memory: {memory_usage}% used\n"
+            f"RAM: {total_memory:.1f}GB total, {available_memory:.1f}GB available"
         )
         return system_info
 
     except Exception as e:
-        return f"Oops! I encountered an issue while gathering system details: {e}"
+        return f"Error gathering system information: {str(e)}"
 
 def tell_joke():
     """Tell a random joke."""
@@ -773,22 +824,31 @@ def get_current_city():
 def add_task(schedule_time, task_func=None, *args, **kwargs):
     """Add a scheduled task at the specified time."""
     try:
+        if not task_func:
+            return "Error: No task function provided"
         # Schedule the task
         job = schedule.every().day.at(schedule_time).do(task_func, *args, **kwargs)
+        if not job:
+            return "Error: Could not schedule task"
         job.tags.add(task_func.__name__)  # Add a tag to identify the job
         return f"Task '{task_func.__name__}' scheduled for {schedule_time}."
+    except ValueError as e:
+        return f"Invalid schedule time format: {e}"
     except Exception as e:
         return f"Error scheduling task: {e}"
 
 def remove_task(task_name):
     """Remove a scheduled task by name."""
     try:
+        if not task_name:
+            return "Error: No task name provided"
+        removed = False
         # Find and cancel the job with the specified name
         for job in schedule.get_jobs():
             if task_name in job.tags:
                 schedule.cancel_job(job)
-                return f"Task '{task_name}' removed successfully."
-        return f"No task found with name '{task_name}'."
+                removed = True
+        return f"Task '{task_name}' removed successfully." if removed else f"No task found with name '{task_name}'."
     except Exception as e:
         return f"Error removing task: {e}"
 
@@ -798,35 +858,35 @@ def show_tasks():
         tasks = schedule.get_jobs()
         if not tasks:
             return "No scheduled tasks found."
-        task_list = "\n".join([f"{job.tags} at {job.next_run}" for job in tasks])
-        return f"Scheduled tasks:\n{task_list}"
+        task_list = []
+        for job in tasks:
+            next_run = job.next_run.strftime("%Y-%m-%d %H:%M:%S") if job.next_run else "Not scheduled"
+            task_list.append(f"Task: {', '.join(job.tags)} | Next run: {next_run}")
+        return "Scheduled tasks:\n" + "\n".join(task_list)
     except Exception as e:
         return f"Error showing tasks: {e}"
 
 def send_email(subject, body, to_email):
     """Send an email with the specified subject, body, and recipient."""
+    EMAIL_CREDENTIALS_PATH = os.path.join("Requirements", "email_credentials.txt")
+    
+    # Input validation
+    if not all([subject, body, to_email]):
+        return "Error: Subject, body, and recipient email are required."
+    
     # Check if the credentials file exists
     if not os.path.exists(EMAIL_CREDENTIALS_PATH):
-        return f"Error: The email credentials file '{EMAIL_CREDENTIALS_PATH}' does not exist."
+        return f"Error: Email credentials file not found at {EMAIL_CREDENTIALS_PATH}"
 
     try:
         # Read email credentials
         with open(EMAIL_CREDENTIALS_PATH, "r") as f:
-            lines = f.readlines()
-            from_email = lines[0].strip()
-            password = lines[1].strip()
-    except Exception as e:
-        return f"Error reading email credentials: {e}"
+            credentials = f.read().strip().split('\n')
+            if len(credentials) < 2:
+                return "Error: Invalid email credentials format"
+            from_email = credentials[0].strip()
+            password = credentials[1].strip()
 
-    # Validate inputs
-    if not subject:
-        return "Error: Subject cannot be empty."
-    if not body:
-        return "Error: Body cannot be empty."
-    if not to_email:
-        return "Error: Recipient email cannot be empty."
-
-    try:
         # Create email message
         msg = MIMEMultipart()
         msg['From'] = from_email
@@ -834,17 +894,21 @@ def send_email(subject, body, to_email):
         msg['Subject'] = subject
         msg.attach(MIMEText(body, 'plain'))
 
-        # Establish SMTP connection and send the email
-        with smtplib.SMTP('smtp.gmail.com', 587, timeout=10) as server:
-            server.starttls()
-            server.login(from_email, password)
-            server.sendmail(from_email, to_email, msg.as_string())
-
-        return "Email sent successfully."
-    except smtplib.SMTPException as e:
-        return f"SMTP error occurred: {e}"
+        # Establish SMTP connection with error handling and timeout
+        try:
+            with smtplib.SMTP('smtp.gmail.com', 587, timeout=10) as server:
+                server.starttls()
+                server.login(from_email, password)
+                server.send_message(msg)
+            return "Email sent successfully."
+        except smtplib.SMTPAuthenticationError:
+            return "Error: Email authentication failed. Please check your credentials."
+        except smtplib.SMTPException as e:
+            return f"SMTP error occurred: {str(e)}"
+        except TimeoutError:
+            return "Error: Connection timed out while sending email."
     except Exception as e:
-        return f"An error occurred while sending email: {e}"
+        return f"Error sending email: {str(e)}"
 
 def copy_file(src, dst):
     """Copy a file to a directory."""
