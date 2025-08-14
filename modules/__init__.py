@@ -1,11 +1,11 @@
 import spacy
+import os
 
 # This file can be empty or can include initialization code if needed
 password = "Daniyal_pass"  # This will be used for authentication
 
 # Contacts dictionary
 contacts = {
-    "daniyal" : "+923289287491",
     "mama" : "+923084122686",
     "papa" : "+971558150319",
     "natalia sister" : "+923124681701",
@@ -13,9 +13,10 @@ contacts = {
     # Add more contacts as needed
 }
 
-# API keys path
-WEATHER_API_KEY_PATH = r"C:\Users\DANIYAL\OneDrive\Documents\Program and Projacts\Hands-on Projects\AI Projacts\Jarvis AI Assistant\Requirements\weather api key.txt"
-EMAIL_CREDENTIALS_PATH = r"C:\Users\DANIYAL\OneDrive\Documents\Program and Projacts\Hands-on Projects\AI Projacts\Jarvis AI Assistant\Requirements\email_credentials.txt"
+# API keys path (relative to project root)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+EMAIL_CREDENTIALS_PATH = os.path.join(BASE_DIR, "Requirements", "email_credentials.txt")
 
 # Define constants
 NOTE_FILE_PATH = "notes.txt"

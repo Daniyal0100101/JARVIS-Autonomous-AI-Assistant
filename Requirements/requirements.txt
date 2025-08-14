@@ -25,6 +25,7 @@ fsspec
 gitdb
 GitPython
 googlesearch-python
+google-genai
 h11
 httpcore
 httpx

@@ -1,7 +1,8 @@
+import os
 import pyttsx3
+os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "hide"
 import pygame
 import requests
-import os
 from typing import Union, Optional
 from .system_control import is_connected
 

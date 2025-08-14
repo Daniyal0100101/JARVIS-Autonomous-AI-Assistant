@@ -123,8 +123,8 @@ def handle_query_input(query, mode, online):
 
 def main():
     """Main function that initializes the AI assistant and handles user interactions."""
-    # if not authenticate_user():
-    #     return  # Exit if authentication fails
+    if not authenticate_user():
+        return  # Exit if authentication fails
 
     online = is_connected()
     greeting = get_greeting(online)
@@ -133,7 +133,7 @@ def main():
     print(f"\n{separator}\n{greeting}\n{separator}\n")
     speak(greeting)
 
-    mode = 'text'  # Just to start in text mode; 'text' if not online else 'voice'
+    mode = 'text' # Just to start in text mode;  if not online else 'voice'
 
     while True:
         try:

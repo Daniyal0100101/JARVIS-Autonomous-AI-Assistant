@@ -34,7 +34,7 @@ def generate_image(prompt, api_url='https://api.airforce/v1/imagine2'):
         params = {'prompt': prompt}
         
         # Send the GET request
-        response = requests.get(api_url, params=params)
+        response = requests.get(api_url, params=params, timeout=10)
         
         # Check if the request was successful
         if response.status_code == 200:

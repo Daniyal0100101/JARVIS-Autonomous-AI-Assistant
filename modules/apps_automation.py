@@ -1,4 +1,4 @@
-def send_whatsapp_message(recipient, message):
+def send_whatsapp_message(recipient_name, message):
     """
     Sends a WhatsApp message using pywhatkit, handling the import dynamically.
     
@@ -8,8 +8,12 @@ def send_whatsapp_message(recipient, message):
     """
     try:
         import pywhatkit as kit
+        from modules import contacts
+
+        # Get the recipient's phone number from the contacts
+        recipient_number = contacts[recipient_name]
         # Send the message instantly
-        kit.sendwhatmsg_instantly(recipient, message, wait_time=10, tab_close=True)
+        kit.sendwhatmsg_instantly(recipient_number, message, wait_time=10, tab_close=True)
         return "The message was sent successfully!"
     except ImportError:
         return "Failed to import pywhatkit, please ensure it is installed."

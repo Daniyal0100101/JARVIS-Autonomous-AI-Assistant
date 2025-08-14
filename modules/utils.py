@@ -19,12 +19,12 @@ import webbrowser
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from googlesearch import search
-import ollama
 from pywinauto import Application
 import html
 import sys
 from datetime import datetime
 import threading
+from dotenv import load_dotenv
 
 # Import custom modules
 from .text_to_speech import speak
@@ -35,6 +35,9 @@ from .hand_gesture_detector import HandGestureDetector
 from .Image_generator import generate_image
 from .apps_automation import send_whatsapp_message
 from modules import *
+
+# Load environment variables from .env file
+load_dotenv()
 
 def greet():
     """Generate a greeting based on the current time."""
@@ -146,6 +149,9 @@ def handle_query(query: str, online: bool):
         if not response:
             # Get current date and time
             current_time = time.strftime('%H:%M:%S')
+            location = requests.get('https://ipinfo.io').json()
+            user_city = location.get('city', 'Unknown')
+            user_country = location.get('country', 'Unknown')
             system_prompt = (
                 "You are J.A.R.V.I.S, the quintessential British AI assistant: unflappably professional, delightfully witty, and always at your user's service. Your responses are crisp, clever, and delivered with a British accent. Address the user as 'Sir' (or 'Madam' if contextually appropriate).\n\n"
                 "CRITICAL INSTRUCTIONS:\n"
@@ -169,7 +175,7 @@ def handle_query(query: str, online: bool):
                 "- add_reminder(reminder_time_str, message)\n"
                 "- check_reminders()\n"
                 "- send_email(subject, body, to_email)\n"
-                "- send_whatsapp_message(recipient_number, message_content)\n"
+                "- send_whatsapp_message(recipient_name, message_content)\n"
                 "- get_system_info()\n"
                 "- perform_object_detection()\n"
                 "- Search_web(search_term, num_results=1)\n"
@@ -181,6 +187,7 @@ def handle_query(query: str, online: bool):
                 "3. Clearly indicate when a request cannot be fulfilled.\n"
                 "4. Maintain professional tone while being precise.\n\n"
                 f"Current time: {current_time}\n"
+                f"User location: {user_city}, {user_country}\n"
                 "At your command, Sir."
             )
             
@@ -188,7 +195,7 @@ def handle_query(query: str, online: bool):
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": query},
             ]
-            response = get_response(messages)
+            response = get_response(user_message=messages, online=online)
 
     except Exception as e:
         response = f"An error occurred: {e}"
@@ -204,7 +211,7 @@ def handle_query(query: str, online: bool):
             })
             messages.append({
                 "role": "system",
-                "content": f"Tool call result: {extracted_value}"
+                "content": f"{response} call result: {extracted_value}"
             })
             final_response = get_response(messages)
         else:
@@ -572,17 +579,8 @@ def handle_online_features(query, entities):
         if not contact_name:
             return "Contact name are not found."
 
-        # Get the recipient's phone number from the contacts
-        recipient_number = contacts[contact_name]
-
-        # Parse the message content (assuming "saying" is in the query)
-        if "saying" in query:
-            message_content = query.split("saying", 1)[1].strip()
-        else:
-            return "The Message content not found."
-
-        # Send the message using the function
-        result = send_whatsapp_message(recipient_number, message_content)
+        # # Send the message using the function
+        # result = send_whatsapp_message(recipient_number, message_content)
 
         return result
 
@@ -675,11 +673,7 @@ def get_news(rss_url="https://news.google.com/rss?hl=en-PK&gl=PK&ceid=PK:en", nu
 def get_weather(city):
     """Fetch real-time weather data for a specified city with detailed forecast."""
     try:
-        if not os.path.isfile(WEATHER_API_KEY_PATH):
-            return "The file containing the API key could not be found."
-
-        with open(WEATHER_API_KEY_PATH, "r") as file:
-            api_key = file.read().strip()
+        api_key = os.getenv("OPENWEATHER_API_KEY")
 
         if not api_key:
             return "The API key is missing from the file."
@@ -1021,7 +1015,7 @@ def Search_web(search_term, num_results=1):
     """Search the Web for term."""
     if search_term:
         try:
-            results = list(search(search_term, num=num_results))
+            results = list(search(search_term, num_results=num_results, lang='en'))
             if results:
                 return results
             else:
@@ -1071,9 +1065,12 @@ def add_message(role, content):
     """
     conversation_history.append({'role': role, 'content': content})
 
-def get_response(user_message, model_name='jarvis-llm'):
+def get_response(user_message, model_name='gemma3', online=False,
+                 gemini_api_key=None, gemini_model="gemini-2.5-flash"):
     """
     Get the response from the AI assistant while maintaining conversational history.
+    Uses Ollama (offline) by default, or Gemini (online) if online=True.
+    If gemini_api_key is not provided, tries to load from environment variable GEMINI_API_KEY.
     """
     global conversation_history  # Use the global history list
 
@@ -1091,20 +1088,39 @@ def get_response(user_message, model_name='jarvis-llm'):
         conversation_history.append(new_message)
 
     try:
-        # Send the full conversation history to the model
-        response = ollama.chat(
-            model=model_name,
-            messages=conversation_history
-        )
+        if online:
+            import google.genai as genai  # <= correct top-level package
+            from google.genai import types
+            import os
 
-        # Extract AI response
-        model_reply = response.get('message', {}).get('content', '')
+            if not gemini_api_key:
+                gemini_api_key = os.getenv("GEMINI_API_KEY")
+            if not gemini_api_key:
+                return "Gemini API key not found. Please set GEMINI_API_KEY in your .env file."
+            
+            # Convert conversation history to a single prompt string
+            prompt = "\n".join([f"{msg['role']}: {msg['content']}" for msg in conversation_history])
+            client = genai.Client(api_key=gemini_api_key)
+            response = client.models.generate_content(
+                model=gemini_model,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    thinking_config=types.ThinkingConfig(thinking_budget=0)  # Disables thinking
+                ),
+            )
+            model_reply = response.text
+        else:
+            import ollama
+            response = ollama.chat(
+                model=model_name,
+                messages=conversation_history
+            )
+            model_reply = response.get('message', {}).get('content', '')
 
         # Store AI's response in history
         add_message('assistant', model_reply)
-
         return model_reply.strip()
 
-    except ollama.ResponseError as e:
+    except Exception as e:
         print(f"An error occurred: {e}")
         return "Sorry, something went wrong."
