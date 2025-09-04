@@ -22,7 +22,7 @@ def send_whatsapp_message(recipient_name, message):
 
 # Example usage:
 # if __name__ == "__main__":
-#     recipient_number = "+923124681701"  # Replace with actual phone number
+#     recipient_name = "mama"
 #     message_content = f"The 71 - 32 is: {71 - 32}"
-#     result = send_whatsapp_message(recipient_number, message_content)
+#     result = send_whatsapp_message(recipient_name, message_content)
 #     print(result)
