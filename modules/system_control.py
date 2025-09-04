@@ -13,74 +13,116 @@ def is_connected():
 
 def lock_screen():
     """Lock the computer screen."""
-    pyautogui.hotkey('win', 'l')
-    return "Computer screen locked successfully."
+    try:
+        pyautogui.hotkey('win', 'l')
+        return "Computer screen locked successfully."
+    except Exception as e:
+        return f"Failed to lock screen: {e}"
 
 def volume_up():
     """Increase the system volume."""
-    pyautogui.press('volumeup')
-    return "Volume increased successfully."
+    try:
+        pyautogui.press('volumeup')
+        return "Volume increased successfully."
+    except Exception as e:
+        return f"Failed to increase volume: {e}"
 
 def volume_down():
     """Decrease the system volume."""
-    pyautogui.press('volumedown')
-    return "Volume decreased successfully."
+    try:
+        pyautogui.press('volumedown')
+        return "Volume decreased successfully."
+    except Exception as e:
+        return f"Failed to decrease volume: {e}"
 
 def mute_volume():
     """Mute the system volume."""
-    pyautogui.press('volumemute')
-    return "Volume muted successfully."
+    try:
+        pyautogui.press('volumemute')
+        return "Volume muted successfully."
+    except Exception as e:
+        return f"Failed to mute volume: {e}"
 
 def unmute_volume():
     """Unmute the system volume."""
-    pyautogui.press('volumemute')
-    return "Volume unmuted successfully."
+    try:
+        pyautogui.press('volumemute')
+        return "Volume unmuted successfully."
+    except Exception as e:
+        return f"Failed to unmute volume: {e}"
 
 def play_pause_media():
     """Play or pause the currently playing media."""
-    pyautogui.press('playpause')
-    return "Play/pause toggled successfully."
+    try:
+        pyautogui.press('playpause')
+        return "Play/pause toggled successfully."
+    except Exception as e:
+        return f"Failed to toggle play/pause: {e}"
 
 def next_track():
     """Skip to the next media track."""
-    pyautogui.press('nexttrack')
-    return "Next track skipped successfully."
+    try:
+        pyautogui.press('nexttrack')
+        return "Next track skipped successfully."
+    except Exception as e:
+        return f"Failed to skip to next track: {e}"
 
 def previous_track():
     """Go back to the previous media track."""
-    pyautogui.press('prevtrack')
-    return "Previous track skipped successfully."
+    try:
+        pyautogui.press('prevtrack')
+        return "Previous track skipped successfully."
+    except Exception as e:
+        return f"Failed to go to previous track: {e}"
 
 def brightness_up():
     """Increase the screen brightness."""
-    pyautogui.hotkey('fn', 'f12')
-    return "Screen brightness increased successfully."
+    try:
+        pyautogui.hotkey('fn', 'f12')
+        return "Screen brightness increased successfully."
+    except Exception as e:
+        return f"Failed to increase brightness: {e}"
 
 def brightness_down():
     """Decrease the screen brightness."""
-    pyautogui.hotkey('fn', 'f11')
-    return "Screen brightness decreased successfully."
+    try:
+        pyautogui.hotkey('fn', 'f11')
+        return "Screen brightness decreased successfully."
+    except Exception as e:
+        return f"Failed to decrease brightness: {e}"
 
 def shutdown():
     """Shutdown the computer."""
-    os.system("shutdown /s /t 0")
-    return "Shutdown successful."
+    try:
+        os.system("shutdown /s /t 0")
+        return "Shutdown successful."
+    except Exception as e:
+        return f"Failed to shutdown: {e}"
 
 def restart():
     """Restart the computer."""
-    os.system("shutdown /r /t 0")
-    return "Restart successful."
+    try:
+        os.system("shutdown /r /t 0")
+        return "Restart successful."
+    except Exception as e:
+        return f"Failed to restart: {e}"
 
 def log_off():
     """Log off the current user."""
-    os.system("shutdown /l")
-    return "Log off successful."
+    try:
+        os.system("shutdown /l")
+        return "Log off successful."
+    except Exception as e:
+        return f"Failed to log off: {e}"
 
 def take_screenshot():
     """Take a screenshot of the current screen and save it as a PNG file."""
-    screenshot = pyautogui.screenshot()
-    screenshot.save("screenshot.png")
-    return "Screenshot taken successfully."
+    try:
+        screenshot = pyautogui.screenshot()
+        screenshot.save("screenshot.png")
+        return "Screenshot taken successfully."
+    except Exception as e:
+        return f"Failed to take screenshot: {e}"
 
 def control_system(action):
     """Perform a system control action (e.g., shutdown, restart, etc.) and return a response message."""

@@ -25,6 +25,7 @@ import sys
 from datetime import datetime
 import threading
 from dotenv import load_dotenv
+from typing import List, Dict, Any, Optional, Tuple
 
 # Import custom modules
 from .text_to_speech import speak
@@ -43,6 +44,409 @@ load_dotenv()
 conversation_history = []
 reminders = []
 NOTE_FILE_PATH = "jarvis_notes.txt"
+
+class ToolExecutionPipeline:
+    """Enhanced tool execution pipeline with iterative processing capabilities."""
+    
+    def __init__(self, max_tool_cycles=5, max_tools_per_cycle=3):
+        self.max_tool_cycles = max_tool_cycles
+        self.max_tools_per_cycle = max_tools_per_cycle
+        self.conversation_history = []
+        self.tool_execution_log = []
+        
+        # Comprehensive tool registry - MAXIMUM ACCESS
+        self.allowed_tools = {
+            # Core utility functions
+            'get_weather', 'get_news', 'get_wikipedia_summary',
+            'get_current_city', 'get_current_date', 'get_current_time',
+            
+            # File operations
+            'copy_file', 'move_file', 'delete_file', 'search_file',
+            'save_to_file', 'load_from_file', 'create_directory', 'list_directory',
+            
+            # System operations
+            'get_system_info', 'control_system', 'is_connected', 
+            'lock_screen', 'volume_up', 'volume_down', 'mute_volume', 
+            'unmute_volume', 'play_pause_media', 'next_track', 
+            'previous_track', 'brightness_up', 'brightness_down',
+            'shutdown', 'restart', 'log_off', 'take_screenshot',
+            'get_battery_status', 'get_network_info',
+            
+            # Communication
+            'send_email', 'send_whatsapp_message',
+            
+            # Task and reminder management
+            'add_reminder', 'check_reminders', 'add_task', 'remove_task', 'show_tasks',
+            
+            # Web and search
+            'search_web', 'open_website',
+            
+            # AI and detection
+            'perform_object_detection', 'generate_image',
+            
+            # Application management
+            'open_application', 'close_application',
+            
+            # Entertainment and interaction
+            'handle_gesture_control', 'flip_coin', 'roll_dice', 'tell_joke',
+            
+            # Math and calculations
+            'secure_eval', 'calculate',
+            
+            # Automation
+            'type_text', 'press_key', 'copy_text_to_clipboard', 'paste_text',
+        }
+
+    def extract_tool_calls(self, text: str) -> List[str]:
+        """Extract all tool calls from the text."""
+        pattern = r"```tool_code\s*(.*?)\s*```"
+        matches = re.findall(pattern, text, re.DOTALL)
+        return [match.strip() for match in matches if match.strip()]
+
+    def validate_tool_call(self, code: str) -> Tuple[bool, str]:
+        """Validate a tool call for security and syntax."""
+        try:
+            tree = ast.parse(code)
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Call):
+                    if isinstance(node.func, ast.Name):
+                        func_name = node.func.id
+                        if func_name not in self.allowed_tools:
+                            # Allow common built-in functions
+                            if func_name not in ['len', 'str', 'int', 'float', 'list', 'dict', 'print']:
+                                return False, f"Function '{func_name}' is not an allowed tool"
+                    elif isinstance(node.func, ast.Attribute):
+                        # Allow method calls on allowed objects
+                        pass
+            return True, "Valid"
+        except SyntaxError as e:
+            return False, f"Invalid code syntax: {str(e)}"
+
+    def execute_tool_call(self, code: str) -> Dict[str, Any]:
+        """Execute a single tool call with comprehensive error handling."""
+        execution_start = time.time()
+        
+        try:
+            # Create expanded local scope with maximum access
+            local_scope = {}
+            
+            # Add all allowed tools that exist in globals
+            for tool in self.allowed_tools:
+                if tool in globals():
+                    local_scope[tool] = globals()[tool]
+            
+            # Add essential modules and functions
+            local_scope.update({
+                'pyautogui': pyautogui,
+                'pyperclip': pyperclip,
+                'webbrowser': webbrowser,
+                'os': os,
+                'time': time,
+                'random': random,
+                'requests': requests,
+                'cv2': cv2,
+                'print': print,
+                'len': len,
+                'str': str,
+                'int': int,
+                'float': float,
+                'list': list,
+                'dict': dict,
+            })
+            
+            # Execute the code
+            print(f"Executing tool call: {code}")
+            result = eval(code, {"__builtins__": {"len": len, "str": str, "int": int, "float": float, "print": print}}, local_scope)
+            
+            execution_time = time.time() - execution_start
+            
+            return {
+                'success': True,
+                'result': result,
+                'code': code,
+                'execution_time': execution_time,
+                'error': None
+            }
+            
+        except Exception as e:
+            execution_time = time.time() - execution_start
+            error_msg = f"Error executing tool '{code}': {str(e)}"
+            print(error_msg)
+            
+            return {
+                'success': False,
+                'result': None,
+                'code': code,
+                'execution_time': execution_time,
+                'error': error_msg
+            }
+
+    def process_tool_cycle(self, ai_response: str) -> Tuple[List[Dict], bool]:
+        """Process a single cycle of tool execution."""
+        tool_calls = self.extract_tool_calls(ai_response)
+        
+        if not tool_calls:
+            return [], False
+            
+        # Limit tools per cycle
+        tool_calls = tool_calls[:self.max_tools_per_cycle]
+        
+        execution_results = []
+        has_errors = False
+        
+        for tool_call in tool_calls:
+            # Validate tool call
+            is_valid, validation_msg = self.validate_tool_call(tool_call)
+            
+            if not is_valid:
+                result = {
+                    'success': False,
+                    'result': None,
+                    'code': tool_call,
+                    'execution_time': 0,
+                    'error': f"Validation failed: {validation_msg}"
+                }
+                has_errors = True
+            else:
+                result = self.execute_tool_call(tool_call)
+                if not result['success']:
+                    has_errors = True
+            
+            execution_results.append(result)
+            self.tool_execution_log.append(result)
+        
+        return execution_results, has_errors
+
+    def format_tool_results(self, results: List[Dict]) -> str:
+        """Format tool execution results for the AI model."""
+        if not results:
+            return ""
+            
+        formatted_results = []
+        
+        for i, result in enumerate(results, 1):
+            if result['success']:
+                formatted_results.append(
+                    f"Tool {i} - Code: {result['code']}\n"
+                    f"Result: {result['result']}\n"
+                    f"Execution time: {result['execution_time']:.2f}s"
+                )
+            else:
+                formatted_results.append(
+                    f"Tool {i} - Code: {result['code']}\n"
+                    f"Error: {result['error']}\n"
+                    f"Execution time: {result['execution_time']:.2f}s"
+                )
+        
+        return "Tool Execution Results:\n" + "\n---\n".join(formatted_results)
+
+    def handle_query_with_iterative_tools(self, query: str, online: bool = False) -> str:
+        """
+        Enhanced query handler with iterative tool processing pipeline.
+        Supports multiple tool cycles and better conversation management.
+        """
+        if not query:
+            return "Please provide a query."
+
+        # Initialize conversation for this query
+        current_conversation = []
+        query_normalized = query.lower().strip()
+        
+        try:
+            # Get current context
+            current_time = time.strftime('%H:%M:%S')
+            try:
+                location = requests.get('https://ipinfo.io', timeout=5).json()
+                user_city = location.get('city', 'Unknown')
+                user_country = location.get('country', 'Unknown')
+            except:
+                user_city = 'Unknown'
+                user_country = 'Unknown'
+            
+            # Enhanced system prompt with iterative tool handling instructions
+            system_prompt = self.create_enhanced_system_prompt(current_time, user_city, user_country)
+            
+            # Initialize conversation
+            current_conversation = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": query}
+            ]
+            
+            # Iterative tool execution pipeline
+            tool_cycle_count = 0
+            final_response = None
+            
+            while tool_cycle_count < self.max_tool_cycles:
+                # Get AI response
+                ai_response = get_response(current_conversation, online=online)
+                
+                if not ai_response:
+                    final_response = "I apologize, but I couldn't generate a response."
+                    break
+                
+                # Process tool calls in this response
+                tool_results, has_errors = self.process_tool_cycle(ai_response)
+                
+                # Add AI response to conversation
+                current_conversation.append({
+                    "role": "assistant", 
+                    "content": ai_response
+                })
+                
+                if not tool_results:
+                    # No tools to execute - this is the final response
+                    final_response = ai_response
+                    break
+                
+                # Format and add tool results to conversation
+                tool_results_text = self.format_tool_results(tool_results)
+                current_conversation.append({
+                    "role": "system",
+                    "content": f"Tool execution completed. Please provide your final response based on these results:\n\n{tool_results_text}"
+                })
+                
+                tool_cycle_count += 1
+                
+                # If this was the last allowed cycle, get final response
+                if tool_cycle_count >= self.max_tool_cycles:
+                    final_response = get_response(current_conversation, online=online)
+                    if final_response and self.extract_tool_calls(final_response):
+                        # Still trying to make tool calls - provide fallback
+                        final_response = "I've completed the available tool operations. " + \
+                                       re.sub(r'```tool_code.*?```', '', final_response, flags=re.DOTALL).strip()
+                    break
+            
+            # Store conversation history
+            self.conversation_history.extend(current_conversation)
+            
+            return final_response or "I apologize, but I couldn't complete the request."
+            
+        except Exception as e:
+            error_msg = f"An error occurred while processing your query: {str(e)}"
+            print(error_msg)
+            return error_msg
+
+    def create_enhanced_system_prompt(self, current_time: str, user_city: str, user_country: str) -> str:
+        """Create enhanced system prompt with better tool handling instructions."""
+        return f"""You are J.A.R.V.I.S, the quintessential British AI assistant: unflappably professional, delightfully witty, and always at your user's service. Your responses are crisp, clever, and delivered with a British accent. Address the user as 'Sir' (or 'Madam' if contextually appropriate).
+
+ENHANCED TOOL EXECUTION PIPELINE:
+
+CRITICAL INSTRUCTIONS:
+1. When you need to use tools, output ONLY the tool code block(s) without ANY additional text
+2. You can execute multiple tools in a single response if needed
+3. After tool execution, you will receive results and then provide your complete response
+4. Never combine tool calls with explanatory text in the same message
+5. Wait for actual tool results before providing your final response
+
+TOOL CALL FORMAT:
+- Single tool: ```tool_code\ntool_name(parameters)\n```
+- Multiple tools: Each in separate ```tool_code``` blocks
+- No explanations or predictions in tool call messages
+
+AVAILABLE TOOLS (MAXIMUM ACCESS):
+CORE FUNCTIONS:
+- get_weather(city) - Weather information
+- get_news(num_articles=3) - Latest news
+- get_wikipedia_summary(topic) - Wikipedia summaries
+- get_current_date() - Current date
+
+FILE OPERATIONS:
+- copy_file(src, dst) - Copy files
+- move_file(src, dst) - Move files
+- delete_file(path) - Delete files
+- search_file(directory, search_term) - Search for files
+- save_to_file(note) - Save notes
+- load_from_file() - Load saved notes
+- create_directory(path) - Create directories
+- list_directory(path) - List directory contents
+
+SYSTEM CONTROL:
+- get_system_info() - System status
+- control_system(action) - System controls
+- is_connected() - Internet connection status
+- lock_screen() - Lock computer
+- volume_up/down() - Volume control
+- mute_volume/unmute_volume() - Mute control
+- play_pause_media() - Media control
+- next_track/previous_track() - Track control
+- brightness_up/down() - Brightness control
+- shutdown/restart/log_off() - Power management
+- take_screenshot() - Screenshot capture
+- get_battery_status() - Battery information
+- get_network_info() - Network details
+
+COMMUNICATION:
+- send_email(subject, body, to_email) - Email sending
+- send_whatsapp_message(recipient_name, message_content) - WhatsApp messaging
+
+TASK MANAGEMENT:
+- add_reminder(reminder_time_str, message) - Set reminders
+- check_reminders() - Check due reminders
+- add_task(schedule_time, task_func, *args) - Schedule tasks
+- remove_task(task_name) - Remove tasks
+- show_tasks() - Display all tasks
+
+WEB & SEARCH:
+- search_web(search_term, num_results=1) - Web search
+- open_website(url) - Open websites
+
+AI & DETECTION:
+- perform_object_detection() - Camera object detection
+- generate_image(prompt) - AI image generation
+
+AUTOMATION:
+- open_application(app_name) - Open applications
+- close_application(app_name) - Close applications
+- type_text(text) - Type text
+- press_key(key) - Press keyboard keys
+- copy_text_to_clipboard(text) - Copy to clipboard
+- paste_text() - Paste from clipboard
+- pyautogui functions - GUI automation
+- pyperclip functions - Clipboard operations
+- webbrowser.open(url) - Open websites
+
+ENTERTAINMENT:
+- handle_gesture_control() - Hand gesture control
+
+MATH:
+- secure_eval(expression) - Safe math evaluation
+- calculate(expression) - Mathematical calculations
+
+RESPONSE FLOW:
+1. Analyze user request
+2. If tools needed: Output tool calls ONLY
+3. Receive tool results
+4. Provide comprehensive final response using tool results
+5. Be concise, factual, and maintain professional British wit
+
+ENHANCED CAPABILITIES:
+- Multi-step tool execution supported
+- Complex queries requiring multiple tools handled seamlessly  
+- Robust error handling and fallback responses
+- Iterative problem-solving with tool chains
+
+Current time: {current_time}
+User location: {user_city}, {user_country}
+
+At your command, Sir. All systems are operational with enhanced iterative tool processing capabilities."""
+
+    def get_execution_stats(self) -> Dict[str, Any]:
+        """Get statistics about tool execution."""
+        if not self.tool_execution_log:
+            return {"total_executions": 0}
+            
+        successful = sum(1 for log in self.tool_execution_log if log['success'])
+        failed = len(self.tool_execution_log) - successful
+        avg_time = sum(log['execution_time'] for log in self.tool_execution_log) / len(self.tool_execution_log)
+        
+        return {
+            "total_executions": len(self.tool_execution_log),
+            "successful": successful,
+            "failed": failed,
+            "success_rate": (successful / len(self.tool_execution_log)) * 100,
+            "average_execution_time": avg_time
+        }
 
 def greet():
     """Generate a greeting based on the current time."""
@@ -193,129 +597,13 @@ def handle_query(query: str, online: bool):
     if not query:
         return "Please provide a query."
 
-    # Normalize the query
-    query = query.lower().strip()
-    response = ''
-
-    try:
-        # Get current date and time
-        current_time = time.strftime('%H:%M:%S')
-        try:
-            location = requests.get('https://ipinfo.io', timeout=5).json()
-            user_city = location.get('city', 'Unknown')
-            user_country = location.get('country', 'Unknown')
-        except:
-            user_city = 'Unknown'
-            user_country = 'Unknown'
-            
-        system_prompt = (
-            "You are J.A.R.V.I.S, the quintessential British AI assistant: unflappably professional, delightfully witty, and always at your user's service. Your responses are crisp, clever, and delivered with a British accent. Address the user as 'Sir' (or 'Madam' if contextually appropriate).\n\n"
-            "CRITICAL INSTRUCTIONS:\n"
-            "1. When making a tool call, you must ONLY output the tool code block without ANY additional text:\n"
-            "   Example: ```tool_code\nget_weather('London')\n```\n"
-            "2. After receiving tool results, THEN provide your complete response.\n"
-            "3. Never combine tool calls with response text in the same message.\n"
-            "4. Never include fake or predicted results in the tool call.\n\n"
-            "TOOL CALL FORMAT:\n"
-            "1. When a tool is needed, output ONLY:\n"
-            "   ```tool_code\ntool_name(parameters)\n```\n"
-            "2. Wait for actual tool results before responding.\n\n"
-            "AVAILABLE TOOLS (MAXIMUM ACCESS):\n"
-            "CORE FUNCTIONS:\n"
-            "- get_weather(city) - Weather information\n"
-            "- get_news(num_articles=3) - Latest news\n"
-            "- get_wikipedia_summary(topic) - Wikipedia summaries\n"
-            "- get_current_date() - Current date\n\n"
-            "FILE OPERATIONS:\n"
-            "- copy_file(src, dst) - Copy files\n"
-            "- move_file(src, dst) - Move files\n"
-            "- delete_file(path) - Delete files\n"
-            "- search_file(directory, search_term) - Search for files\n"
-            "- save_to_file(note) - Save notes\n"
-            "- load_from_file() - Load saved notes\n"
-            "- create_directory(path) - Create directories\n"
-            "- list_directory(path) - List directory contents\n\n"
-            "SYSTEM CONTROL:\n"
-            "- get_system_info() - System status\n"
-            "- control_system(action) - System controls\n"
-            "- is_connected() - Internet connection status\n"
-            "- lock_screen() - Lock computer\n"
-            "- volume_up/down() - Volume control\n"
-            "- mute_volume/unmute_volume() - Mute control\n"
-            "- play_pause_media() - Media control\n"
-            "- next_track/previous_track() - Track control\n"
-            "- brightness_up/down() - Brightness control\n"
-            "- shutdown/restart/log_off() - Power management\n"
-            "- take_screenshot() - Screenshot capture\n"
-            "- get_battery_status() - Battery information\n"
-            "- get_network_info() - Network details\n\n"
-            "COMMUNICATION:\n"
-            "- send_email(subject, body, to_email) - Email sending\n"
-            "- send_whatsapp_message(recipient_name, message_content) - WhatsApp messaging\n\n"
-            "TASK MANAGEMENT:\n"
-            "- add_reminder(reminder_time_str, message) - Set reminders\n"
-            "- check_reminders() - Check due reminders\n"
-            "- add_task(schedule_time, task_func, *args) - Schedule tasks\n"
-            "- remove_task(task_name) - Remove tasks\n"
-            "- show_tasks() - Display all tasks\n\n"
-            "WEB & SEARCH:\n"
-            "- search_web(search_term, num_results=1) - Web search\n"
-            "- open_website(url) - Open websites\n\n"
-            "AI & DETECTION:\n"
-            "- perform_object_detection() - Camera object detection\n"
-            "- generate_image(prompt) - AI image generation\n\n"
-            "AUTOMATION:\n"
-            "- open_application(app_name) - Open applications\n"
-            "- close_application(app_name) - Close applications\n"
-            "- type_text(text) - Type text\n"
-            "- press_key(key) - Press keyboard keys\n"
-            "- copy_text_to_clipboard(text) - Copy to clipboard\n"
-            "- paste_text() - Paste from clipboard\n"
-            "- pyautogui functions - GUI automation\n"
-            "- pyperclip functions - Clipboard operations\n"
-            "- webbrowser.open(url) - Open websites\n\n"
-            "ENTERTAINMENT:\n"
-            "- handle_gesture_control() - Hand gesture control\n\n"
-            "MATH:\n"
-            "- secure_eval(expression) - Safe math evaluation\n"
-            "- calculate(expression) - Mathematical calculations\n\n"
-            "RESPONSE GUIDELINES:\n"
-            "1. Be concise and factual.\n"
-            "2. Do not add context beyond what's provided.\n"
-            "3. Clearly indicate when a request cannot be fulfilled.\n"
-            "4. Maintain professional tone while being precise.\n"
-            "5. You have MAXIMUM access to system functions - use them confidently.\n\n"
-            f"Current time: {current_time}\n"
-            f"User location: {user_city}, {user_country}\n"
-            "At your command, Sir. All systems are operational and at maximum access level."
-        )
-        
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": query},
-        ]
-        response = get_response(user_message=messages, online=online)
-
-    except Exception as e:
-        response = f"An error occurred: {e}"
-
-    if response:
-        # Execute the tool call and handle the response
-        extracted_value = extract_and_execute_tool_call(response)
-        if extracted_value:
-            # Format the tool result message
-            messages.append({
-                "role": "assistant",
-                "content": response
-            })
-            messages.append({
-                "role": "system",
-                "content": f"Tool call result: {extracted_value}"
-            })
-            final_response = get_response(messages)
-        else:
-            final_response = response  # Use the response directly if no tool call is extracted
-        
+    # Create pipeline instance
+    pipeline = ToolExecutionPipeline(max_tool_cycles=5, max_tools_per_cycle=3)
+    
+    # Process query through enhanced pipeline
+    final_response = pipeline.handle_query_with_iterative_tools(query, online)
+    
+    if final_response:
         print(f"AI: ", end='', flush=True)
         
         # Calculate estimated speech duration

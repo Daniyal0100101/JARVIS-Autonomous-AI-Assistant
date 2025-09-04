@@ -40,22 +40,22 @@ def verify_password(password):
     return hashlib.sha256(password.encode()).hexdigest() == STORED_PASSWORD_HASH
 
 def get_greeting(online):
-    """Generates a greeting based on the online status."""
+    """Generates a Jarvis-style greeting based on the online status."""
     greetings = [
-        f"{greet()}! Systems are fully operational.",
-        f"{greet()}! All systems online and at your disposal.",
-        f"{greet()}! Standing by for your instructions.",
-        f"{greet()}! Ready to assist you."
+        f"{greet()}! Jarvis at your service. All systems are green.",
+        f"{greet()}! Operational and ready for your command.",
+        f"{greet()}! Awaiting your instructions, sir.",
+        f"{greet()}! Standing by to assist you with anything you need."
     ]
 
     online_status = random.choice([
-        "Network connection established. Awaiting your command.",
-        "Connected to the network. Ready to serve.",
-        "Monitoring systems and awaiting your input."
+        "Network connection verified. Full functionality enabled.",
+        "Online and synchronized. Ready to execute your requests.",
+        "Connected to all systems. Monitoring for your next command."
     ]) if online else random.choice([
-        "Operating in offline mode. Certain functions may be limited.",
-        "No network detected. Running in offline mode.",
-        "Offline mode active. Network-dependent features unavailable."
+        "Offline mode engaged. Some features may be restricted.",
+        "No network detected. Operating with limited capabilities.",
+        "Running in offline mode. Network-dependent tasks are unavailable."
     ])
 
     return f"{random.choice(greetings)} {online_status} How may I assist you today?"
@@ -133,7 +133,7 @@ def main():
     print(f"\n{separator}\n{greeting}\n{separator}\n")
     speak(greeting)
 
-    mode = 'text' # Just to start in text mode;  if not online else 'voice'
+    mode = 'text' if not online else 'voice' # Just to start in text mode;  
 
     while True:
         try:

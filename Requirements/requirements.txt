@@ -106,6 +106,12 @@ wikipedia
 wrapt
 zope.interface
 
+# Additional required packages for all tools:
+spacy
+pywhatkit
+pygame
+dotenv
+
 # Install these separately:
 # pip install numpy --only-binary=:all:
 # pip install -U pip setuptools wheel

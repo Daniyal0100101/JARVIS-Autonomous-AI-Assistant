@@ -8,15 +8,20 @@ def send_whatsapp_message(recipient_name, message):
     """
     try:
         import pywhatkit as kit
+    except ImportError:
+        return "Failed to import pywhatkit. Please install it with 'pip install pywhatkit'."
+    try:
         from modules import contacts
+    except ImportError:
+        return "Failed to import contacts. Please ensure 'modules/contacts.py' exists and is correct."
 
-        # Get the recipient's phone number from the contacts
-        recipient_number = contacts[recipient_name]
-        # Send the message instantly
+    # Get the recipient's phone number from the contacts
+    recipient_number = contacts.get(recipient_name)
+    if not recipient_number:
+        return f"Contact '{recipient_name}' not found. Please check your contacts."
+    try:
         kit.sendwhatmsg_instantly(recipient_number, message, wait_time=10, tab_close=True)
         return "The message was sent successfully!"
-    except ImportError:
-        return "Failed to import pywhatkit, please ensure it is installed."
     except Exception as e:
         return f"Failed to send the message: {e}"
 
