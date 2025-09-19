@@ -1,6 +1,8 @@
 import socket
 import pyautogui
 import os
+import subprocess
+import shlex
 
 def is_connected():
     """Check if the system is connected to the internet."""
@@ -124,27 +126,20 @@ def take_screenshot():
     except Exception as e:
         return f"Failed to take screenshot: {e}"
 
-def control_system(action):
-    """Perform a system control action (e.g., shutdown, restart, etc.) and return a response message."""
-    actions = {
-        "shutdown": shutdown,
-        "restart": restart,
-        "log off": log_off,
-        "volume up": volume_up,
-        "volume down": volume_down,
-        "mute": mute_volume,
-        "unmute": unmute_volume,
-        "play pause": play_pause_media,
-        "next track": next_track,
-        "previous track": previous_track,
-        "brightness up": brightness_up,
-        "brightness down": brightness_down,
-        "screenshot": take_screenshot
-    }
-
-    action_func = actions.get(action.lower())
-    
-    if action_func:
-        return action_func()  # Execute the function and return its response
-    else:
-        return "Unknown system control action."
+def system_cli(command: str):
+    """A compact CLI interface to execute safe commands only."""
+    dangerous_keywords = [
+        'shutdown', 'reboot', 'rm', 'del', 'format', 'mkfs', 'dd', 'poweroff',
+        'init', 'halt', 'kill', 'taskkill', 'rd', 'rmdir', 'net user', 'net localgroup',
+        'reg', 'diskpart', 'chkdsk', 'bootrec', 'bcdedit', 'attrib', 'erase', 'logout',
+        'logoff', 'sudo', 'su', 'passwd', 'userdel', 'usermod', 'groupdel', 'chmod', 'chown'
+    ]
+    tokens = shlex.split(command.lower())
+    for keyword in dangerous_keywords:
+        if any(keyword in token for token in tokens):
+            return f"Command contains dangerous keyword: '{keyword}'. Execution blocked."
+    try:
+        result = subprocess.run(command, shell=True, capture_output=True, text=True)
+        return result.stdout if result.stdout else result.stderr
+    except Exception as e:
+        return f"Error executing command: {e}"

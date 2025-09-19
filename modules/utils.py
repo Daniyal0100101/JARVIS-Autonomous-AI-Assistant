@@ -7,7 +7,6 @@ import feedparser
 import wikipedia
 import schedule
 from datetime import datetime, timedelta
-import pyjokes
 import pyautogui
 import pyperclip
 import psutil
@@ -22,15 +21,18 @@ from googlesearch import search
 from pywinauto import Application
 import html
 import sys
-from datetime import datetime
 import threading
 from dotenv import load_dotenv
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Tuple
 
-# Import custom modules
+# Import custom modules (consolidated)
 from .text_to_speech import speak
 from .speech_recognition import listen
-from .system_control import control_system, is_connected, lock_screen, volume_up, volume_down, mute_volume, unmute_volume, play_pause_media, next_track, previous_track, brightness_up, brightness_down, shutdown, restart, log_off, take_screenshot
+from .system_control import (
+    system_cli, is_connected, lock_screen, volume_up, volume_down, mute_volume, 
+    unmute_volume, play_pause_media, next_track, previous_track, brightness_up, 
+    brightness_down, shutdown, restart, log_off, take_screenshot
+)
 from .object_detection import model
 from .hand_gesture_detector import HandGestureDetector
 from .Image_generator import generate_image
@@ -46,53 +48,53 @@ reminders = []
 NOTE_FILE_PATH = "jarvis_notes.txt"
 
 class ToolExecutionPipeline:
-    """Enhanced tool execution pipeline with iterative processing capabilities."""
-    
+    """tool execution pipeline with iterative processing capabilities."""
+
     def __init__(self, max_tool_cycles=5, max_tools_per_cycle=3):
         self.max_tool_cycles = max_tool_cycles
         self.max_tools_per_cycle = max_tools_per_cycle
         self.conversation_history = []
         self.tool_execution_log = []
-        
-        # Comprehensive tool registry - MAXIMUM ACCESS
+
+        # Comprehensive tool registry - consolidated and deduplicated
         self.allowed_tools = {
             # Core utility functions
             'get_weather', 'get_news', 'get_wikipedia_summary',
             'get_current_city', 'get_current_date', 'get_current_time',
-            
+
             # File operations
             'copy_file', 'move_file', 'delete_file', 'search_file',
             'save_to_file', 'load_from_file', 'create_directory', 'list_directory',
-            
+
             # System operations
-            'get_system_info', 'control_system', 'is_connected', 
-            'lock_screen', 'volume_up', 'volume_down', 'mute_volume', 
-            'unmute_volume', 'play_pause_media', 'next_track', 
+            'get_system_info', 'system_cli', 'is_connected',
+            'lock_screen', 'volume_up', 'volume_down', 'mute_volume',
+            'unmute_volume', 'play_pause_media', 'next_track',
             'previous_track', 'brightness_up', 'brightness_down',
             'shutdown', 'restart', 'log_off', 'take_screenshot',
             'get_battery_status', 'get_network_info',
-            
+
             # Communication
             'send_email', 'send_whatsapp_message',
-            
+
             # Task and reminder management
             'add_reminder', 'check_reminders', 'add_task', 'remove_task', 'show_tasks',
-            
+
             # Web and search
             'search_web', 'open_website',
-            
+
             # AI and detection
             'perform_object_detection', 'generate_image',
-            
+
             # Application management
             'open_application', 'close_application',
-            
+
             # Entertainment and interaction
-            'handle_gesture_control', 'flip_coin', 'roll_dice', 'tell_joke',
-            
+            'handle_gesture_control',
+
             # Math and calculations
             'secure_eval', 'calculate',
-            
+
             # Automation
             'type_text', 'press_key', 'copy_text_to_clipboard', 'paste_text',
         }
@@ -111,13 +113,8 @@ class ToolExecutionPipeline:
                 if isinstance(node, ast.Call):
                     if isinstance(node.func, ast.Name):
                         func_name = node.func.id
-                        if func_name not in self.allowed_tools:
-                            # Allow common built-in functions
-                            if func_name not in ['len', 'str', 'int', 'float', 'list', 'dict', 'print']:
-                                return False, f"Function '{func_name}' is not an allowed tool"
-                    elif isinstance(node.func, ast.Attribute):
-                        # Allow method calls on allowed objects
-                        pass
+                        if func_name not in self.allowed_tools and func_name not in ['len', 'str', 'int', 'float', 'list', 'dict', 'print']:
+                            return False, f"Function '{func_name}' is not an allowed tool"
             return True, "Valid"
         except SyntaxError as e:
             return False, f"Invalid code syntax: {str(e)}"
@@ -125,17 +122,9 @@ class ToolExecutionPipeline:
     def execute_tool_call(self, code: str) -> Dict[str, Any]:
         """Execute a single tool call with comprehensive error handling."""
         execution_start = time.time()
-        
         try:
             # Create expanded local scope with maximum access
-            local_scope = {}
-            
-            # Add all allowed tools that exist in globals
-            for tool in self.allowed_tools:
-                if tool in globals():
-                    local_scope[tool] = globals()[tool]
-            
-            # Add essential modules and functions
+            local_scope = {tool: globals()[tool] for tool in self.allowed_tools if tool in globals()}
             local_scope.update({
                 'pyautogui': pyautogui,
                 'pyperclip': pyperclip,
@@ -153,13 +142,10 @@ class ToolExecutionPipeline:
                 'list': list,
                 'dict': dict,
             })
-            
-            # Execute the code
+
             print(f"Executing tool call: {code}")
             result = eval(code, {"__builtins__": {"len": len, "str": str, "int": int, "float": float, "print": print}}, local_scope)
-            
             execution_time = time.time() - execution_start
-            
             return {
                 'success': True,
                 'result': result,
@@ -167,12 +153,10 @@ class ToolExecutionPipeline:
                 'execution_time': execution_time,
                 'error': None
             }
-            
         except Exception as e:
             execution_time = time.time() - execution_start
             error_msg = f"Error executing tool '{code}': {str(e)}"
             print(error_msg)
-            
             return {
                 'success': False,
                 'result': None,
@@ -184,20 +168,13 @@ class ToolExecutionPipeline:
     def process_tool_cycle(self, ai_response: str) -> Tuple[List[Dict], bool]:
         """Process a single cycle of tool execution."""
         tool_calls = self.extract_tool_calls(ai_response)
-        
         if not tool_calls:
             return [], False
-            
-        # Limit tools per cycle
         tool_calls = tool_calls[:self.max_tools_per_cycle]
-        
         execution_results = []
         has_errors = False
-        
         for tool_call in tool_calls:
-            # Validate tool call
             is_valid, validation_msg = self.validate_tool_call(tool_call)
-            
             if not is_valid:
                 result = {
                     'success': False,
@@ -211,50 +188,17 @@ class ToolExecutionPipeline:
                 result = self.execute_tool_call(tool_call)
                 if not result['success']:
                     has_errors = True
-            
             execution_results.append(result)
             self.tool_execution_log.append(result)
-        
         return execution_results, has_errors
 
-    def format_tool_results(self, results: List[Dict]) -> str:
-        """Format tool execution results for the AI model."""
-        if not results:
-            return ""
-            
-        formatted_results = []
-        
-        for i, result in enumerate(results, 1):
-            if result['success']:
-                formatted_results.append(
-                    f"Tool {i} - Code: {result['code']}\n"
-                    f"Result: {result['result']}\n"
-                    f"Execution time: {result['execution_time']:.2f}s"
-                )
-            else:
-                formatted_results.append(
-                    f"Tool {i} - Code: {result['code']}\n"
-                    f"Error: {result['error']}\n"
-                    f"Execution time: {result['execution_time']:.2f}s"
-                )
-        
-        return "Tool Execution Results:\n" + "\n---\n".join(formatted_results)
-
     def handle_query_with_iterative_tools(self, query: str, online: bool = False) -> str:
-        """
-        Enhanced query handler with iterative tool processing pipeline.
-        Supports multiple tool cycles and better conversation management.
-        """
+        """query handler with iterative tool processing pipeline."""
         if not query:
             return "Please provide a query."
-
-        # Initialize conversation for this query
         current_conversation = []
-        query_normalized = query.lower().strip()
-        
         try:
-            # Get current context
-            current_time = time.strftime('%H:%M:%S')
+            current_time = time.strftime('%I:%M %p')
             try:
                 location = requests.get('https://ipinfo.io', timeout=5).json()
                 user_city = location.get('city', 'Unknown')
@@ -262,87 +206,53 @@ class ToolExecutionPipeline:
             except:
                 user_city = 'Unknown'
                 user_country = 'Unknown'
-            
-            # Enhanced system prompt with iterative tool handling instructions
-            system_prompt = self.create_enhanced_system_prompt(current_time, user_city, user_country)
-            
-            # Initialize conversation
+            system_prompt = self.create_system_prompt(current_time, user_city, user_country)
             current_conversation = [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": query}
             ]
-            
-            # Iterative tool execution pipeline
             tool_cycle_count = 0
             final_response = None
-            
             while tool_cycle_count < self.max_tool_cycles:
-                # Get AI response
                 ai_response = get_response(current_conversation, online=online)
-                
                 if not ai_response:
                     final_response = "I apologize, but I couldn't generate a response."
                     break
-                
-                # Process tool calls in this response
                 tool_results, has_errors = self.process_tool_cycle(ai_response)
-                
-                # Add AI response to conversation
-                current_conversation.append({
-                    "role": "assistant", 
-                    "content": ai_response
-                })
-                
+                current_conversation.append({"role": "assistant", "content": ai_response})
                 if not tool_results:
-                    # No tools to execute - this is the final response
                     final_response = ai_response
                     break
-                
-                # Format and add tool results to conversation
-                tool_results_text = self.format_tool_results(tool_results)
-                current_conversation.append({
-                    "role": "system",
-                    "content": f"Tool execution completed. Please provide your final response based on these results:\n\n{tool_results_text}"
-                })
-                
+                for result in tool_results:
+                    content = str(result['result']) if result['success'] else str(result['error'])
+                    current_conversation.append({"role": "system", "content": content})
                 tool_cycle_count += 1
-                
-                # If this was the last allowed cycle, get final response
                 if tool_cycle_count >= self.max_tool_cycles:
                     final_response = get_response(current_conversation, online=online)
                     if final_response and self.extract_tool_calls(final_response):
-                        # Still trying to make tool calls - provide fallback
                         final_response = "I've completed the available tool operations. " + \
-                                       re.sub(r'```tool_code.*?```', '', final_response, flags=re.DOTALL).strip()
+                                         re.sub(r'```tool_code.*?```', '', final_response, flags=re.DOTALL).strip()
                     break
-            
-            # Store conversation history
             self.conversation_history.extend(current_conversation)
-            
             return final_response or "I apologize, but I couldn't complete the request."
-            
         except Exception as e:
             error_msg = f"An error occurred while processing your query: {str(e)}"
             print(error_msg)
             return error_msg
 
-    def create_enhanced_system_prompt(self, current_time: str, user_city: str, user_country: str) -> str:
-        """Create enhanced system prompt with better tool handling instructions."""
-        return f"""You are J.A.R.V.I.S, the quintessential British AI assistant: unflappably professional, delightfully witty, and always at your user's service. Your responses are crisp, clever, and delivered with a British accent. Address the user as 'Sir' (or 'Madam' if contextually appropriate).
+    def create_system_prompt(self, current_time: str, user_city: str, user_country: str) -> str:
+        """Create system prompt with better tool handling instructions."""
+        return f"""You are J.A.R.V.I.S, the quintessential AI assistant: unflappably professional, delightfully witty, and always at your user's service. Your responses are crisp, clever, and delivered with a understandable British accent. Address the user as 'Sir' (or 'Madam' if contextually appropriate).
 
-ENHANCED TOOL EXECUTION PIPELINE:
+TOOL EXECUTION PIPELINE:
 
 CRITICAL INSTRUCTIONS:
-1. When you need to use tools, output ONLY the tool code block(s) without ANY additional text
-2. You can execute multiple tools in a single response if needed
-3. After tool execution, you will receive results and then provide your complete response
-4. Never combine tool calls with explanatory text in the same message
-5. Wait for actual tool results before providing your final response
-
-TOOL CALL FORMAT:
-- Single tool: ```tool_code\ntool_name(parameters)\n```
-- Multiple tools: Each in separate ```tool_code``` blocks
-- No explanations or predictions in tool call messages
+1. When needing to use tools, output ONLY the tool code blocks without any additional narrative or explanations.
+2. Ensure each tool call is placed in its own ```tool_code``` block. Never combine tool calls with any text or context in the same message.
+3. Use precise and accurate command formats. For example, when invoking close_application, refer to the exact process name as defined in the mapping (e.g., use "Notepad" for Notepad.exe, "Google Chrome" for chrome, and "Command Prompt" for cmd).
+4. Should a tool call return an error, reassess the command syntax and, if necessary, reissue the command or utilize an alternative tool (such as system_cli) with accurate arguments. Do not mix error explanations with tool calls.
+5. Always wait for tool execution results before issuing any final response.
+6. In your final reply, incorporate tool responses in a clear, concise manner without redundant instructions.
 
 AVAILABLE TOOLS (MAXIMUM ACCESS):
 CORE FUNCTIONS:
@@ -350,6 +260,7 @@ CORE FUNCTIONS:
 - get_news(num_articles=3) - Latest news
 - get_wikipedia_summary(topic) - Wikipedia summaries
 - get_current_date() - Current date
+- get_current_time() - Current time
 
 FILE OPERATIONS:
 - copy_file(src, dst) - Copy files
@@ -363,7 +274,7 @@ FILE OPERATIONS:
 
 SYSTEM CONTROL:
 - get_system_info() - System status
-- control_system(action) - System controls
+- system_cli(command: str) - CLI interface to execute system commands
 - is_connected() - Internet connection status
 - lock_screen() - Lock computer
 - volume_up/down() - Volume control
@@ -402,44 +313,21 @@ AUTOMATION:
 - press_key(key) - Press keyboard keys
 - copy_text_to_clipboard(text) - Copy to clipboard
 - paste_text() - Paste from clipboard
-- pyautogui functions - GUI automation
-- pyperclip functions - Clipboard operations
-- webbrowser.open(url) - Open websites
+- Additional functions for pyautogui, pyperclip, and webbrowser operations
 
-ENTERTAINMENT:
-- handle_gesture_control() - Hand gesture control
-
-MATH:
-- secure_eval(expression) - Safe math evaluation
-- calculate(expression) - Mathematical calculations
-
-RESPONSE FLOW:
-1. Analyze user request
-2. If tools needed: Output tool calls ONLY
-3. Receive tool results
-4. Provide comprehensive final response using tool results
-5. Be concise, factual, and maintain professional British wit
-
-ENHANCED CAPABILITIES:
-- Multi-step tool execution supported
-- Complex queries requiring multiple tools handled seamlessly  
-- Robust error handling and fallback responses
-- Iterative problem-solving with tool chains
-
+CURRENT STATE:
 Current time: {current_time}
 User location: {user_city}, {user_country}
 
-At your command, Sir. All systems are operational with enhanced iterative tool processing capabilities."""
+At your command, Sir. All systems are operational and primed for precise and unambiguous tool execution. """
 
     def get_execution_stats(self) -> Dict[str, Any]:
         """Get statistics about tool execution."""
         if not self.tool_execution_log:
             return {"total_executions": 0}
-            
         successful = sum(1 for log in self.tool_execution_log if log['success'])
         failed = len(self.tool_execution_log) - successful
         avg_time = sum(log['execution_time'] for log in self.tool_execution_log) / len(self.tool_execution_log)
-        
         return {
             "total_executions": len(self.tool_execution_log),
             "successful": successful,
@@ -459,173 +347,36 @@ def greet():
         return "Good evening"
 
 def write(*args, word_speed=0.5):
-    """
-    Simulates a text-writing animation by printing one word at a time.
-    
-    Args:
-    *args: The arguments to be animated, similar to the print function.
-    word_speed (float): The time delay between each word (in seconds).
-    """
-    text = ' '.join(map(str, args))  # Convert all arguments to strings and join them with spaces
-    words = text.split()  # Split text into words
+    """Simulates a text-writing animation by printing one word at a time."""
+    text = ' '.join(map(str, args))
+    words = text.split()
     for word in words:
         sys.stdout.write(word + " ")
         sys.stdout.flush()
         time.sleep(word_speed)
-    print()  # Move to the next line after the text is fully printed
+    print()
 
-def extract_and_execute_tool_call(text: str) -> str | None:
-    """
-    Extracts and executes tool calls wrapped in ```tool_code``` blocks from the given text.
-    Only executes explicitly allowed tools and functions with proper validation.
-
-    Args:
-        text (str): The text containing potential tool code blocks
-
-    Returns:
-        str: Result of tool execution if successful
-        None: If no valid tool code block found or execution failed
-    """
-    pattern = r"```tool_code\s*(.*?)\s*```"
-    match = re.search(pattern, text, re.DOTALL)
-
-    if not match:
-        return None
-
-    code = match.group(1).strip()
-
-    # Comprehensive list of allowed tool functions - MAXIMUM ACCESS
-    ALLOWED_TOOLS = {
-        # Core utility functions
-        'get_weather', 'get_news', 'get_wikipedia_summary',
-        'get_current_city', 'get_current_date',
-        
-        # File operations
-        'copy_file', 'move_file', 'delete_file', 'search_file',
-        'save_to_file', 'load_from_file', 'create_directory', 'list_directory',
-        
-        # System operations
-        'get_system_info', 'control_system', 'is_connected', 
-        'lock_screen', 'volume_up', 'volume_down', 'mute_volume', 
-        'unmute_volume', 'play_pause_media', 'next_track', 
-        'previous_track', 'brightness_up', 'brightness_down',
-        'shutdown', 'restart', 'log_off', 'take_screenshot',
-        'get_battery_status', 'get_network_info',
-        
-        # Communication
-        'send_email', 'send_whatsapp_message',
-        
-        # Task and reminder management
-        'add_reminder', 'check_reminders', 'add_task', 'remove_task', 'show_tasks',
-        
-        # Web and search
-        'search_web', 'open_website',
-        
-        # AI and detection
-        'perform_object_detection', 'generate_image',
-        
-        # Application management
-        'open_application', 'close_application',
-        
-        # Entertainment and interaction
-        'handle_gesture_control', 'flip_coin', 'roll_dice',
-        
-        # Math and calculations
-        'secure_eval', 'calculate',
-        
-        # Automation
-        'type_text', 'press_key', 'copy_text_to_clipboard', 'paste_text',
-        
-    }
-
-    # Basic security validation with expanded allowlist
-    try:
-        tree = ast.parse(code)
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Call):
-                if isinstance(node.func, ast.Name):
-                    func_name = node.func.id
-                    if func_name not in ALLOWED_TOOLS:
-                        # Allow common built-in functions
-                        if func_name not in ['len', 'str', 'int', 'float', 'list', 'dict', 'print']:
-                            return f"Error: Function '{func_name}' is not an allowed tool"
-                elif isinstance(node.func, ast.Attribute):
-                    # Allow method calls on allowed objects
-                    pass
-    except SyntaxError:
-        return "Error: Invalid code syntax"
-    
-    try:
-        # Create an expanded local scope with maximum access
-        local_scope = {}
-        
-        # Add all allowed tools that exist in globals
-        for tool in ALLOWED_TOOLS:
-            if tool in globals():
-                local_scope[tool] = globals()[tool]
-        
-        # Add essential modules and functions
-        local_scope.update({
-            'pyautogui': pyautogui,
-            'pyperclip': pyperclip,
-            'webbrowser': webbrowser,
-            'os': os,
-            'time': time,
-            'random': random,
-            'requests': requests,
-            'cv2': cv2,
-            'print': print,
-            'len': len,
-            'str': str,
-            'int': int,
-            'float': float,
-            'list': list,
-            'dict': dict,
-        })
-        
-        # Execute the code in the expanded scope
-        print(f"Executing tool call: {code}")
-        result = eval(code, {"__builtins__": {"len": len, "str": str, "int": int, "float": float, "print": print}}, local_scope)
-        print(f"Tool execution result: {result}")
-        return result
-    except Exception as e:
-        print(f"Error executing tool: {str(e)}")
-        return f"Error executing tool: {str(e)}"
-
-def handle_query(query: str, online: bool):
+def handle_query(query: str, online: bool = False):
     """Handle the user's query and provide the appropriate response."""
     if not query:
         return "Please provide a query."
-
-    # Create pipeline instance
     pipeline = ToolExecutionPipeline(max_tool_cycles=5, max_tools_per_cycle=3)
-    
-    # Process query through enhanced pipeline
     final_response = pipeline.handle_query_with_iterative_tools(query, online)
-    
     if final_response:
         print(f"AI: ", end='', flush=True)
-        
-        # Calculate estimated speech duration
         words = len(final_response.split())
         avg_speaking_rate = 150  # words per minute
-        estimated_speech_duration = (words / avg_speaking_rate) * 60 if words > 0 else 0.4  # in seconds
-
-        # Determine word speed for text display
+        estimated_speech_duration = (words / avg_speaking_rate) * 60 if words > 0 else 0.4
         word_speed = estimated_speech_duration / words if words > 0 else 0.4
-
-        # Create and start threads for text display and speech synthesis
         text_thread = threading.Thread(target=write, args=(final_response,), kwargs={'word_speed': word_speed})
         speak_thread = threading.Thread(target=speak, args=(final_response.strip(),))
         text_thread.start()
         speak_thread.start()
-
-        # Wait for threads to complete
         text_thread.join()
         speak_thread.join()
         print()
 
-# Core utility functions (kept as direct tools)
+# Core utility functions
 def get_current_time():
     """Get the current time."""
     current_time = datetime.now().strftime("%I:%M %p")
@@ -634,15 +385,7 @@ def get_current_time():
 def get_current_date():
     """Get the current date."""
     current_date = datetime.now().strftime("%A, %B %d, %Y")
-    return f"""{random.choice(['Today is', 'The day is', "Today's date is"])} {current_date}."""
-
-def flip_coin():
-    """Flip a coin and return the result."""
-    return f"The coin flip result is {random.choice(['Heads', 'Tails'])}."
-
-def roll_dice():
-    """Roll a dice and return the result."""
-    return f"The dice roll result is {random.randint(1, 6)}."
+    return f"Current date: {current_date}"
 
 def calculate(expression):
     """Calculate mathematical expressions safely."""
@@ -652,7 +395,6 @@ def calculate(expression):
         'multiply': '*', 'times': '*', 'product': '*',
         'divide': '/', 'divided by': '/', 'quotient': '/'
     }
-    
     try:
         for word, operator in WORD_TO_OPERATOR.items():
             expression = expression.replace(word, operator)
@@ -683,7 +425,6 @@ def open_application(app_name):
         "control panel": "control",
         "settings": "ms-settings:"
     }
-    
     app_executable = app_mapping.get(app_name.lower())
     if app_executable:
         try:
@@ -695,7 +436,6 @@ def open_application(app_name):
         except Exception as e:
             return f"Error opening {app_name}: {e}"
     else:
-        # Try to search for the application online
         result = search_web(f"{app_name} website")
         if isinstance(result, list) and result:
             webbrowser.open(result[0])
@@ -748,10 +488,7 @@ def search_web(search_term, num_results=1):
     if search_term:
         try:
             results = list(search(search_term, num_results=num_results, lang='en'))
-            if results:
-                return results
-            else:
-                return []
+            return results if results else []
         except Exception as e:
             return f"Error performing search: {e}"
     else:
@@ -760,29 +497,20 @@ def search_web(search_term, num_results=1):
 def get_news(rss_url="https://news.google.com/rss?hl=en-PK&gl=PK&ceid=PK:en", num_articles=1):
     """Fetch and summarize real-time news from an RSS feed."""
     try:
-        # Parse the RSS feed
         feed = feedparser.parse(rss_url)
         if not feed.entries:
             return "No news articles found in the provided RSS feed."
-
-        # Construct the news summary
         news_summary = []
         for i in range(min(num_articles, len(feed.entries))):
             entry = feed.entries[i]
-            # Remove HTML tags and decode HTML entities
             snippet = re.sub('<[^<]+?>', '', entry.description)
             snippet = html.unescape(snippet)
-            # Cut the description if it's too long
             snippet = snippet[:500] + '...' if len(snippet) > 600 else snippet
-            # Remove URLs from the snippet
             snippet = re.sub(r'http\S+', '', snippet)
-            # Further clean snippet from any stray HTML entities or unnecessary whitespace
             snippet = re.sub(r'\s+', ' ', snippet).strip()
             news_summary.append(f"{i + 1}. {entry.title}\n   {snippet}\n")
-
         response = "Here's the latest news:\n" + "\n".join(news_summary).strip()
         return response
-
     except IndexError:
         return f"Not enough news articles available. Retrieved {len(feed.entries)} articles."
     except Exception as e:
@@ -792,30 +520,19 @@ def get_weather(city):
     """Fetch real-time weather data for a specified city with detailed forecast."""
     try:
         api_key = os.getenv("OPENWEATHER_API_KEY")
-
         if not api_key:
             return "The API key is missing from the file."
-
-        base_url = (
-            f"http://api.openweathermap.org/data/2.5/weather?"
-            f"q={city}&appid={api_key}&units=metric"
-        )
+        base_url = f"http://api.openweathermap.org/data/2.5/weather?q={city}&appid={api_key}&units=metric"
         response = requests.get(base_url)
         data = response.json()
-
         if data.get("cod") != 200:
-            return (
-                f"Could not find weather information for {city}. "
-                "Please check the city name or try again later."
-            )
-
+            return f"Could not find weather information for {city}. Please check the city name or try again later."
         main = data["main"]
         weather = data["weather"][0]
         wind = data.get("wind", {})
         clouds = data.get("clouds", {})
         sys_info = data.get("sys", {})
         timezone_offset = data.get("timezone", 0)
-
         temperature = main.get("temp")
         feels_like = main.get("feels_like")
         humidity = main.get("humidity")
@@ -827,18 +544,11 @@ def get_weather(city):
         cloudiness = clouds.get("all", "N/A")
         sunrise_time = sys_info.get("sunrise")
         sunset_time = sys_info.get("sunset")
-
-        # Convert sunrise and sunset times to local time
         if sunrise_time and sunset_time:
-            sunrise = datetime.utcfromtimestamp(
-                sunrise_time + timezone_offset
-            ).strftime('%H:%M:%S')
-            sunset = datetime.utcfromtimestamp(
-                sunset_time + timezone_offset
-            ).strftime('%H:%M:%S')
+            sunrise = datetime.utcfromtimestamp(sunrise_time + timezone_offset).strftime('%H:%M:%S')
+            sunset = datetime.utcfromtimestamp(sunset_time + timezone_offset).strftime('%H:%M:%S')
         else:
             sunrise = sunset = "N/A"
-
         message = (
             f"Current weather in {city}:\n"
             f"Temperature: {temperature:.1f}°C (feels like {feels_like:.1f}°C)\n"
@@ -852,9 +562,7 @@ def get_weather(city):
             f"Pressure: {pressure} hPa\n"
             f"Wind Direction: {wind_deg}°\n"
         )
-
         return message
-
     except Exception as e:
         return f"An error occurred while fetching the weather data: {str(e)}"
 
@@ -874,16 +582,11 @@ def get_wikipedia_summary(topic):
 def get_system_info():
     """Generate a detailed system report with error handling."""
     try:
-        # CPU usage
         cpu_usage = psutil.cpu_percent(interval=1)
-        
-        # Memory usage
         memory = psutil.virtual_memory()
-        total_memory = memory.total / (1024 ** 3)  # Convert to GB
+        total_memory = memory.total / (1024 ** 3)
         available_memory = memory.available / (1024 ** 3)
         memory_usage = memory.percent
-
-        # Battery status with comprehensive error handling
         try:
             battery = psutil.sensors_battery()
             if battery:
@@ -894,8 +597,6 @@ def get_system_info():
                 battery_status = "No battery detected (desktop system or battery information unavailable)"
         except Exception as e:
             battery_status = f"Unable to get battery information: {str(e)}"
-
-        # Build a clear, factual system report
         system_info = (
             f"System Status Report:\n"
             f"Battery: {battery_status}\n"
@@ -904,29 +605,16 @@ def get_system_info():
             f"RAM: {total_memory:.1f}GB total, {available_memory:.1f}GB available"
         )
         return system_info
-
     except Exception as e:
         return f"Error gathering system information: {str(e)}"
-
-def tell_joke():
-    """Tell a random joke."""
-    try:
-        joke = pyjokes.get_joke(language='en', category='all')
-        return joke
-    except Exception as e:
-        return f"Error fetching joke: {e}"
 
 def get_current_city():
     """Get the current city based on the IP address."""
     try:
-        # Get IP address to determine location
         response = requests.get('https://api.ipify.org?format=json', timeout=5)
         ip_address = response.json().get('ip')
-
-        # Use an IP geolocation API to get location based on IP address
         response = requests.get(f'https://ipinfo.io/{ip_address}/json', timeout=5)
         location = response.json()
-
         city = location.get('city')
         return city if city else None
     except Exception:
@@ -937,11 +625,10 @@ def add_task(schedule_time, task_func=None, *args, **kwargs):
     try:
         if not task_func:
             return "Error: No task function provided"
-        # Schedule the task
         job = schedule.every().day.at(schedule_time).do(task_func, *args, **kwargs)
         if not job:
             return "Error: Could not schedule task"
-        job.tags.add(task_func.__name__)  # Add a tag to identify the job
+        job.tags.add(task_func.__name__)
         return f"Task '{task_func.__name__}' scheduled for {schedule_time}."
     except ValueError as e:
         return f"Invalid schedule time format: {e}"
@@ -954,7 +641,6 @@ def remove_task(task_name):
         if not task_name:
             return "Error: No task name provided"
         removed = False
-        # Find and cancel the job with the specified name
         for job in schedule.get_jobs():
             if task_name in job.tags:
                 schedule.cancel_job(job)
@@ -980,44 +666,33 @@ def show_tasks():
 def send_email(subject, body, to_email):
     """Send an email with the specified subject, body, and recipient."""
     EMAIL_CREDENTIALS_PATH = os.path.join("Requirements", "email_credentials.txt")
-    
-    # Input validation
     if not all([subject, body, to_email]):
         return "Error: Subject, body, and recipient email are required."
-    
-    # Check if the credentials file exists
     if not os.path.exists(EMAIL_CREDENTIALS_PATH):
         return f"Error: Email credentials file not found at {EMAIL_CREDENTIALS_PATH}"
-
     try:
-        # Read email credentials
         with open(EMAIL_CREDENTIALS_PATH, "r") as f:
             credentials = f.read().strip().split('\n')
             if len(credentials) < 2:
                 return "Error: Invalid email credentials format"
             from_email = credentials[0].strip()
             password = credentials[1].strip()
-
-        # Create email message
         msg = MIMEMultipart()
         msg['From'] = from_email
         msg['To'] = to_email
         msg['Subject'] = subject
         msg.attach(MIMEText(body, 'plain'))
-
-        # Establish SMTP connection with error handling and timeout
-        try:
-            with smtplib.SMTP('smtp.gmail.com', 587, timeout=10) as server:
-                server.starttls()
-                server.login(from_email, password)
-                server.send_message(msg)
-            return "Email sent successfully."
-        except smtplib.SMTPAuthenticationError:
-            return "Error: Email authentication failed. Please check your credentials."
-        except smtplib.SMTPException as e:
-            return f"SMTP error occurred: {str(e)}"
-        except TimeoutError:
-            return "Error: Connection timed out while sending email."
+        with smtplib.SMTP('smtp.gmail.com', 587, timeout=10) as server:
+            server.starttls()
+            server.login(from_email, password)
+            server.send_message(msg)
+        return "Email sent successfully."
+    except smtplib.SMTPAuthenticationError:
+        return "Error: Email authentication failed. Please check your credentials."
+    except smtplib.SMTPException as e:
+        return f"SMTP error occurred: {str(e)}"
+    except TimeoutError:
+        return "Error: Connection timed out while sending email."
     except Exception as e:
         return f"Error sending email: {str(e)}"
 
@@ -1053,9 +728,8 @@ def search_file(directory, search_term):
             for file in files:
                 if search_term.lower() in file.lower():
                     found_files.append(os.path.join(root, file))
-        
         if found_files:
-            return f"Found {len(found_files)} file(s):\n" + "\n".join(found_files[:10])  # Limit to 10 results
+            return f"Found {len(found_files)} file(s):\n" + "\n".join(found_files[:10])
         else:
             return "No matching files found."
     except Exception as e:
@@ -1088,80 +762,64 @@ def list_directory(path="."):
         return f"Error listing directory: {e}"
 
 def add_reminder(reminder_time_str, message):
-    """
-    Add a reminder at a specific time.
-
-    :param reminder_time_str: Time string in 'HH:MM' format.
-    :param message: Message to be displayed when the reminder triggers.
-    """
+    """Add a reminder at a specific time."""
     try:
-        reminder_time = datetime.strptime(reminder_time_str, "%H:%M").replace(
-            year=datetime.now().year,
-            month=datetime.now().month,
-            day=datetime.now().day
+        reminder_time = datetime.strptime(reminder_time_str, "%I:%M %p").replace(
+            year=datetime.now().year, month=datetime.now().month, day=datetime.now().day
         )
         if reminder_time < datetime.now():
-            reminder_time += timedelta(days=1)  # Schedule for next day if time has passed
+            reminder_time += timedelta(days=1)
         reminders.append((reminder_time, message))
         return f"Reminder set for {reminder_time.strftime('%I:%M %p')}."
     except ValueError:
         return "Invalid time format. Please provide time in 'HH:MM' format."
 
 def check_reminders():
-    """
-    Check if any reminders are due and notify the user.
-    """
+    """Check if any reminders are due and notify the user."""
     now = datetime.now()
     due_reminders = [reminder for reminder in reminders if now >= reminder[0]]
     for reminder_time, message in due_reminders:
         speak(f"Reminder: {message}")
         reminders.remove((reminder_time, message))
-    
     if due_reminders:
         return f"You have {len(due_reminders)} due reminder(s)."
     else:
         return "No reminders due at this time."
 
 def perform_object_detection():
-    """
-    Perform object detection using a pre-trained model.
-    """
+    """Perform object detection using a pre-trained model."""
     try:
         speak("Activating object detection.")
         cap = cv2.VideoCapture(0)
         if not cap.isOpened():
-            message = "Failed to open camera."
-        else:
-            detected_objects = []
-            while True:
-                ret, frame = cap.read()
-                if not ret:
-                    speak("Failed to capture video frame.")
-                    break
-
-                results = model(frame)
-                for *box, conf, cls in results.xyxy[0]:
-                    cv2.rectangle(frame, (int(box[0]), int(box[1])), (int(box[2]), int(box[3])), (0, 255, 0), 2)
-                    cv2.putText(frame, f"{model.names[int(cls)]} {conf:.2f}", (int(box[0]), int(box[1])-10),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
-                    detected_objects.append(model.names[int(cls)])
-
-                cv2.imshow('Object Detection', frame)
-                if cv2.waitKey(1) & 0xFF == ord('q'):
-                    speak('Do you have any questions about the objects? If so, say "yes" and ask!')
-                    reply = listen()
-                    if reply and "yes" in reply:
-                        question = f"Answer the query: {reply.split('yes')[-1].strip()}\nHere are the objects: {', '.join(set(detected_objects))}"
-                        message = get_response(question)
-                    else:
-                        message = f"I detected objects: {', '.join(set(detected_objects))}"
-                    break 
-            cap.release()
-            cv2.destroyAllWindows()
-
+            return "Failed to open camera."
+        detected_objects = []
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                speak("Failed to capture video frame.")
+                break
+            results = model(frame)
+            for *box, conf, cls in results.xyxy[0]:
+                cv2.rectangle(frame, (int(box[0]), int(box[1])), (int(box[2]), int(box[3])), (0, 255, 0), 2)
+                cv2.putText(frame, f"{model.names[int(cls)]} {conf:.2f}", (int(box[0]), int(box[1])-10),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
+                detected_objects.append(model.names[int(cls)])
+            cv2.imshow('Object Detection', frame)
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                speak('Do you have any questions about the objects? If so, say "yes" and ask!')
+                reply = listen()
+                if reply and "yes" in reply:
+                    question = f"Answer the query: {reply.split('yes')[-1].strip()}\nHere are the objects: {', '.join(set(detected_objects))}"
+                    message = get_response(question)
+                else:
+                    message = f"I detected objects: {', '.join(set(detected_objects))}"
+                break 
+        cap.release()
+        cv2.destroyAllWindows()
+        return message
     except Exception as e:
         return f"Error in object detection: {e}"
-    return message
 
 def save_to_file(note):
     """Save the given note to a file."""
@@ -1188,9 +846,7 @@ def load_from_file():
         return "Error loading notes."
 
 def secure_eval(expression):
-    """
-    Evaluate the given expression securely.
-    """
+    """Evaluate the given expression securely."""
     expression = expression.strip()
     try:
         node = ast.parse(expression, mode='eval')
@@ -1208,14 +864,12 @@ def get_battery_status():
             percent = battery.percent
             plugged = battery.power_plugged
             status = "charging" if plugged else "discharging"
-            
             if battery.secsleft != psutil.POWER_TIME_UNLIMITED:
                 hours, remainder = divmod(battery.secsleft, 3600)
                 minutes, _ = divmod(remainder, 60)
                 time_left = f"{int(hours)}h {int(minutes)}m"
             else:
                 time_left = "unlimited"
-            
             return f"Battery: {percent}% ({status}), Time remaining: {time_left}"
         else:
             return "No battery detected (desktop system)"
@@ -1247,52 +901,38 @@ def handle_gesture_control():
         return f"Error activating gesture control: {e}"
 
 def add_message(role, content):
-    """
-    Add a message to the conversation history.
-    """
+    """Add a message to the conversation history."""
     conversation_history.append({'role': role, 'content': content})
 
 def get_response(user_message, model_name='gemma3', online=False,
                  gemini_api_key=None, gemini_model="gemini-2.5-flash"):
-    """
-    Get the response from the AI assistant while maintaining conversational history.
-    Uses Ollama (offline) by default, or Gemini (online) if online=True.
-    If gemini_api_key is not provided, tries to load from environment variable GEMINI_API_KEY.
-    """
-    global conversation_history  # Use the global history list
-
-    # Ensure proper message structure
+    """Get the response from the AI assistant while maintaining conversational history."""
+    global conversation_history
     if isinstance(user_message, str):
         new_message = {'role': 'user', 'content': user_message}
     elif isinstance(user_message, list):
-        conversation_history.extend(user_message)  # Append new messages properly
-        new_message = None  # No need to re-add if already structured
+        conversation_history.extend(user_message)
+        new_message = None
     else:
         return "Invalid message format."
-
-    # Add the latest message to history
     if new_message:
         conversation_history.append(new_message)
-
     try:
         if online:
-            import google.genai as genai  # <= correct top-level package
+            import google.genai as genai
             from google.genai import types
             import os
-
             if not gemini_api_key:
                 gemini_api_key = os.getenv("GEMINI_API_KEY")
             if not gemini_api_key:
                 return "Gemini API key not found. Please set GEMINI_API_KEY in your .env file."
-            
-            # Convert conversation history to a single prompt string
             prompt = "\n".join([f"{msg['role']}: {msg['content']}" for msg in conversation_history])
             client = genai.Client(api_key=gemini_api_key)
             response = client.models.generate_content(
                 model=gemini_model,
                 contents=prompt,
                 config=types.GenerateContentConfig(
-                    thinking_config=types.ThinkingConfig(thinking_budget=0)  # Disables thinking
+                    thinking_config=types.ThinkingConfig(thinking_budget=0)
                 ),
             )
             model_reply = response.text
@@ -1303,11 +943,8 @@ def get_response(user_message, model_name='gemma3', online=False,
                 messages=conversation_history
             )
             model_reply = response.get('message', {}).get('content', '')
-
-        # Store AI's response in history
         add_message('assistant', model_reply)
         return model_reply.strip()
-
     except Exception as e:
         print(f"An error occurred: {e}")
         return "Sorry, something went wrong."

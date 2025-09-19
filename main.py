@@ -4,34 +4,44 @@ from modules.text_to_speech import speak
 from modules.speech_recognition import listen, sr
 from modules.system_control import is_connected
 from modules.utils import greet, handle_query
-from modules import password as stored_password
+from modules import password as PASSWORD
+
 import logging
+
+# --- Add Rich imports for modern interface ---
+from rich.console import Console
+from rich.panel import Panel
+from rich.text import Text
+from rich.align import Align
+from rich import box
+
+console = Console()
 
 # Disable all logging in the application
 logging.disable(logging.CRITICAL)
 
 # Hash the imported password 
-STORED_PASSWORD_HASH = hashlib.sha256(stored_password.encode()).hexdigest()
+STORED_PASSWORD_HASH = hashlib.sha256(PASSWORD.encode()).hexdigest()
 
 def authenticate_user(attempts: int = 3):  # Allow three attempts
     """Authenticates the user by verifying the password."""
-    print("Authentication Required.")
+    console.print(Panel.fit("[bold cyan]Authentication Required[/bold cyan]", style="bold blue", box=box.ROUNDED))
     for _ in range(attempts):
         try:
             # Securely get the password without showing it in the console
             password = getpass.getpass("\nEnter password: ")
             if verify_password(password):
-                print("\rAuthentication successful. Access granted.")
+                console.print("[green]✔ Authentication successful. Access granted.[/green]")
                 speak("Authentication successful.")
                 return True
             else:
-                print("\rIncorrect password. Try again.")
+                console.print("[red]✖ Incorrect password. Try again.[/red]")
                 speak("Incorrect password. Try again.")
                 time.sleep(1.5)  # Pause to let the user see the message
         except KeyboardInterrupt:
             break
 
-    print("\rAuthentication failed. System locked.")
+    console.print("[bold red]✖ Authentication failed. System locked.[/bold red]")
     speak("Authentication failed. System locked.")
     return False
 
@@ -71,7 +81,7 @@ def switch_mode(query, current_mode, online):
                 "Voice mode enabled. Awaiting your verbal command.",
                 "Switching to voice interface. Standing by."
             ])
-            print(switch_message)
+            console.print(f"[cyan]{switch_message}[/cyan]")
             speak(switch_message)
             return 'voice'
         else:
@@ -80,7 +90,7 @@ def switch_mode(query, current_mode, online):
                 "Cannot enable voice mode without an active connection.",
                 "Offline status detected. Voice mode is inaccessible."
             ])
-            print(offline_message)
+            console.print(f"[yellow]{offline_message}[/yellow]")
             speak(offline_message)
             return current_mode
 
@@ -90,7 +100,7 @@ def switch_mode(query, current_mode, online):
             "Switching to text interface. Standing by.",
             "Text mode enabled. Awaiting your commands."
         ])
-        print(switch_message)
+        console.print(f"[cyan]{switch_message}[/cyan]")
         speak(switch_message)
         return 'text'
 
@@ -114,7 +124,7 @@ def handle_query_input(query, mode, online):
 
     if any(keyword in query_lower for keyword in ['exit', 'break', 'quit', 'stop', 'bye', 'goodbye']):
         farewell = get_farewell_message()
-        print(farewell)
+        console.print(f"[bold magenta]{farewell}[/bold magenta]")
         speak(farewell)
         return None
 
@@ -123,14 +133,31 @@ def handle_query_input(query, mode, online):
 
 def main():
     """Main function that initializes the AI assistant and handles user interactions."""
+    # --- Modern Rich Welcome Interface ---
+    jarvis_title = Text("JARVIS AI ASSISTANT", style="bold white on blue", justify="center")
+    subtitle = Text("Your Personal AI Assistant", style="italic cyan", justify="center")
+    console.print(Panel(Align.center(jarvis_title), style="bold blue", box=box.DOUBLE, padding=(1, 4)))
+    console.print(Align.center(subtitle))
+    console.print("\n")
+
     if not authenticate_user():
         return  # Exit if authentication fails
 
     online = is_connected()
     greeting = get_greeting(online)
 
-    separator = "─" * 130
-    print(f"\n{separator}\n{greeting}\n{separator}\n")
+    # --- Modern separator and greeting ---
+    separator = Text("─" * 80, style="dim")
+    greeting_panel = Panel(
+        Align.center(Text(greeting, style="bold green")),
+        title="[bold blue]Welcome[/bold blue]",
+        border_style="green",
+        box=box.ROUNDED,
+        padding=(1, 2)
+    )
+    console.print(separator)
+    console.print(greeting_panel)
+    console.print(separator)
     speak(greeting)
 
     mode = 'text' if not online else 'voice' # Just to start in text mode;  
@@ -149,7 +176,7 @@ def main():
                 "\nSession terminated by user command. Logging off.",
                 "\nManual override acknowledged. Shutting down operations."
             ])
-            print(interrupt_message)
+            console.print(f"[yellow]{interrupt_message}[/yellow]")
             speak(interrupt_message)
             break
 
@@ -159,7 +186,7 @@ def main():
                 "My apologies, sir. I couldn’t understand that. Could you say it again?",
                 "I'm afraid I missed that. Would you mind repeating?"
             ])
-            print(error_message)
+            console.print(f"[red]{error_message}[/red]")
             speak(error_message)
 
         except sr.RequestError as e:
@@ -168,7 +195,7 @@ def main():
                 f"Speech recognition service unavailable: {e}. Please check your connection.",
                 f"Speech recognition service failed: {e}. Awaiting further instructions."
             ])
-            print(error_message)
+            console.print(f"[red]{error_message}[/red]")
             speak(error_message)
 
         except Exception as e:
@@ -177,7 +204,7 @@ def main():
                 f"System error detected: {e}. Please wait while I address this.",
                 f"Critical error encountered: {e}. Implementing fail-safe protocols."
             ])
-            print(error_message)
+            console.print(f"[red]{error_message}[/red]")
             speak(error_message)
 
 if __name__ == "__main__":
