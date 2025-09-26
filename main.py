@@ -51,24 +51,21 @@ def verify_password(password):
 
 def get_greeting(online):
     """Generates a Jarvis-style greeting based on the online status."""
-    greetings = [
-        f"{greet()}! Jarvis at your service. All systems are green.",
-        f"{greet()}! Operational and ready for your command.",
-        f"{greet()}! Awaiting your instructions, sir.",
-        f"{greet()}! Standing by to assist you with anything you need."
+    base_greeting = f"{greet()}! Jarvis at your service."
+    online_greetings = [
+        "All systems are green.",
+        "Operational and ready.",
+        "Awaiting your instructions.",
+        "Standing by to assist."
     ]
-
-    online_status = random.choice([
-        "Network connection verified. Full functionality enabled.",
-        "Online and synchronized. Ready to execute your requests.",
-        "Connected to all systems. Monitoring for your next command."
-    ]) if online else random.choice([
-        "Offline mode engaged. Some features may be restricted.",
-        "No network detected. Operating with limited capabilities.",
-        "Running in offline mode. Network-dependent tasks are unavailable."
-    ])
-
-    return f"{random.choice(greetings)} {online_status} How may I assist you today?"
+    offline_greetings = [
+        "Operating in offline mode.",
+        "Running with limited capabilities.",
+        "Network connection unavailable."
+    ]
+    online_status = random.choice(online_greetings) if online else random.choice(offline_greetings)
+    availability = "How may I assist you today?"
+    return f"{base_greeting} {online_status} {availability}"
 
 def switch_mode(query, current_mode, online):
     """Switches between voice and text mode based on user query."""
@@ -76,30 +73,36 @@ def switch_mode(query, current_mode, online):
 
     if mode == "voice mode":
         if online:
-            switch_message = random.choice([
-                "Activating voice mode. Listening attentively.",
-                "Voice mode enabled. Awaiting your verbal command.",
-                "Switching to voice interface. Standing by."
-            ])
+            switch_messages = [
+                "Activating voice mode.",
+                "Voice mode enabled.",
+                "Switching to voice interface."
+            ]
+            readiness = "Listening attentively."
+            switch_message = f"{random.choice(switch_messages)} {readiness}"
             console.print(f"[cyan]{switch_message}[/cyan]")
             speak(switch_message)
             return 'voice'
         else:
-            offline_message = random.choice([
-                "Voice mode unavailable in offline mode. Reverting to text input.",
+            offline_messages = [
+                "Voice mode unavailable in offline mode.",
                 "Cannot enable voice mode without an active connection.",
                 "Offline status detected. Voice mode is inaccessible."
-            ])
+            ]
+            reversion = "Reverting to text input."
+            offline_message = f"{random.choice(offline_messages)} {reversion}"
             console.print(f"[yellow]{offline_message}[/yellow]")
             speak(offline_message)
             return current_mode
 
     elif mode == "text mode":
-        switch_message = random.choice([
-            "Text mode activated. Ready for your input.",
-            "Switching to text interface. Standing by.",
-            "Text mode enabled. Awaiting your commands."
-        ])
+        switch_messages = [
+            "Text mode activated.",
+            "Switching to text interface.",
+            "Text mode enabled."
+        ]
+        readiness = "Ready for your input."
+        switch_message = f"{random.choice(switch_messages)} {readiness}"
         console.print(f"[cyan]{switch_message}[/cyan]")
         speak(switch_message)
         return 'text'
@@ -108,12 +111,14 @@ def switch_mode(query, current_mode, online):
 
 def get_farewell_message():
     """Generates a Jarvis-style farewell message."""
-    return random.choice([
-        "System shutdown initiated. Goodbye, sir.",
-        "Logging off. Awaiting further instructions.",
-        "System deactivated. I will be here when you need me.",
-        "Goodbye, sir. Standing by for your next command."
-    ])
+    farewell_messages = [
+        "System shutdown initiated.",
+        "Logging off.",
+        "System deactivated.",
+        "Goodbye, sir."
+    ]
+    awaiting = "Awaiting further instructions."
+    return f"{random.choice(farewell_messages)} {awaiting}"
 
 def handle_query_input(query, mode, online):
     """Processes the user's query and determines the mode or exit."""
@@ -134,10 +139,20 @@ def handle_query_input(query, mode, online):
 def main():
     """Main function that initializes the AI assistant and handles user interactions."""
     # --- Modern Rich Welcome Interface ---
-    jarvis_title = Text("JARVIS AI ASSISTANT", style="bold white on blue", justify="center")
-    subtitle = Text("Your Personal AI Assistant", style="italic cyan", justify="center")
-    console.print(Panel(Align.center(jarvis_title), style="bold blue", box=box.DOUBLE, padding=(1, 4)))
-    console.print(Align.center(subtitle))
+    title_text = Text("JARVIS AI ASSISTANT", style="bold white on blue")
+    title_panel = Panel(
+        Align.center(title_text),
+        title="[bold blue]AI System[/bold blue]",
+        border_style="blue",
+        box=box.ROUNDED,
+        padding=(1, 2)
+    )
+
+    subtitle_text = Text("Your Personal AI Assistant", style="italic cyan", justify="center")
+    
+    console.clear()
+    console.print(title_panel)
+    console.print(Align.center(subtitle_text))
     console.print("\n")
 
     if not authenticate_user():

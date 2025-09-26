@@ -25,9 +25,42 @@ def send_whatsapp_message(recipient_name, message):
     except Exception as e:
         return f"Failed to send the message: {e}"
 
-# Example usage:
-# if __name__ == "__main__":
-#     recipient_name = "mama"
-#     message_content = f"The 71 - 32 is: {71 - 32}"
-#     result = send_whatsapp_message(recipient_name, message_content)
-#     print(result)
+def send_email(subject, body, to_email):
+    """Send an email with the specified subject, body, and recipient."""
+    import smtplib
+    from email.mime.text import MIMEText
+    from email.mime.multipart import MIMEMultipart
+    import os
+    from dotenv import load_dotenv
+
+    load_dotenv()  # Load environment variables from .env file
+
+    if not all([subject, body, to_email]):
+        return "Error: Subject, body, and recipient email are required."
+
+    from_email = os.getenv("EMAIL_ADDRESS")
+    password = os.getenv("EMAIL_PASSWORD")
+
+    if not from_email or not password:
+        return "Error: Email credentials not found in environment variables.  Please set EMAIL_ADDRESS and EMAIL_PASSWORD."
+
+    msg = MIMEMultipart()
+    msg['From'] = from_email
+    msg['To'] = to_email
+    msg['Subject'] = subject
+    msg.attach(MIMEText(body, 'plain'))
+
+    try:
+        with smtplib.SMTP('smtp.gmail.com', 587, timeout=10) as server:
+            server.starttls()
+            server.login(from_email, password)
+            server.send_message(msg)
+        return "Email sent successfully."
+    except smtplib.SMTPAuthenticationError:
+        return "Error: Email authentication failed. Please check your credentials."
+    except smtplib.SMTPException as e:
+        return f"SMTP error occurred: {str(e)}"
+    except TimeoutError:
+        return "Error: Connection timed out while sending email."
+    except Exception as e:
+        return f"Error sending email: {str(e)}"

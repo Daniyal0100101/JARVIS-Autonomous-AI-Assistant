@@ -1,6 +1,9 @@
 import os
 import pyttsx3
 os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "hide"
+import warnings
+warnings.filterwarnings("ignore", message="pkg_resources is deprecated as an API")
+os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "hide"
 import pygame
 import requests
 from typing import Union, Optional

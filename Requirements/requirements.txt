@@ -111,6 +111,7 @@ spacy
 pywhatkit
 pygame
 dotenv
+subprocess
 
 # Install these separately:
 # pip install numpy --only-binary=:all:

@@ -1,7 +1,6 @@
 import os
 import re
 import time
-import random
 import requests
 import feedparser
 import wikipedia
@@ -12,13 +11,10 @@ import pyperclip
 import psutil
 import cv2
 import shutil
-import smtplib
 import ast
 import webbrowser
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 from googlesearch import search
-from pywinauto import Application
+import subprocess
 import html
 import sys
 import threading
@@ -36,16 +32,11 @@ from .system_control import (
 from .object_detection import model
 from .hand_gesture_detector import HandGestureDetector
 from .Image_generator import generate_image
-from .apps_automation import send_whatsapp_message
+from .apps_automation import send_whatsapp_message, send_email
 from modules import *
 
 # Load environment variables from .env file
 load_dotenv()
-
-# Global variables
-conversation_history = []
-reminders = []
-NOTE_FILE_PATH = "jarvis_notes.txt"
 
 class ToolExecutionPipeline:
     """tool execution pipeline with iterative processing capabilities."""
@@ -125,26 +116,17 @@ class ToolExecutionPipeline:
         try:
             # Create expanded local scope with maximum access
             local_scope = {tool: globals()[tool] for tool in self.allowed_tools if tool in globals()}
-            local_scope.update({
-                'pyautogui': pyautogui,
-                'pyperclip': pyperclip,
-                'webbrowser': webbrowser,
-                'os': os,
-                'time': time,
-                'random': random,
-                'requests': requests,
-                'cv2': cv2,
-                'print': print,
-                'len': len,
-                'str': str,
-                'int': int,
-                'float': float,
-                'list': list,
-                'dict': dict,
-            })
+            # Safely add common modules/objects if they exist in globals
+            for name in ('pyautogui','pyperclip','webbrowser','os','time','random','requests','cv2'):
+                val = globals().get(name)
+                if val is not None:
+                    local_scope[name] = val
+
+            # Add safe builtins to the execution environment
+            safe_builtins = {"len": len, "str": str, "int": int, "float": float, "print": print}
 
             print(f"Executing tool call: {code}")
-            result = eval(code, {"__builtins__": {"len": len, "str": str, "int": int, "float": float, "print": print}}, local_scope)
+            result = eval(code, {"__builtins__": safe_builtins}, local_scope)
             execution_time = time.time() - execution_start
             return {
                 'success': True,
@@ -198,15 +180,7 @@ class ToolExecutionPipeline:
             return "Please provide a query."
         current_conversation = []
         try:
-            current_time = time.strftime('%I:%M %p')
-            try:
-                location = requests.get('https://ipinfo.io', timeout=5).json()
-                user_city = location.get('city', 'Unknown')
-                user_country = location.get('country', 'Unknown')
-            except:
-                user_city = 'Unknown'
-                user_country = 'Unknown'
-            system_prompt = self.create_system_prompt(current_time, user_city, user_country)
+            system_prompt = self.create_system_prompt()
             current_conversation = [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": query}
@@ -240,86 +214,67 @@ class ToolExecutionPipeline:
             print(error_msg)
             return error_msg
 
-    def create_system_prompt(self, current_time: str, user_city: str, user_country: str) -> str:
+    def create_system_prompt(self) -> str:
         """Create system prompt with better tool handling instructions."""
-        return f"""You are J.A.R.V.I.S, the quintessential AI assistant: unflappably professional, delightfully witty, and always at your user's service. Your responses are crisp, clever, and delivered with a understandable British accent. Address the user as 'Sir' (or 'Madam' if contextually appropriate).
-
-TOOL EXECUTION PIPELINE:
-
-CRITICAL INSTRUCTIONS:
-1. When needing to use tools, output ONLY the tool code blocks without any additional narrative or explanations.
-2. Ensure each tool call is placed in its own ```tool_code``` block. Never combine tool calls with any text or context in the same message.
-3. Use precise and accurate command formats. For example, when invoking close_application, refer to the exact process name as defined in the mapping (e.g., use "Notepad" for Notepad.exe, "Google Chrome" for chrome, and "Command Prompt" for cmd).
-4. Should a tool call return an error, reassess the command syntax and, if necessary, reissue the command or utilize an alternative tool (such as system_cli) with accurate arguments. Do not mix error explanations with tool calls.
-5. Always wait for tool execution results before issuing any final response.
-6. In your final reply, incorporate tool responses in a clear, concise manner without redundant instructions.
-
-AVAILABLE TOOLS (MAXIMUM ACCESS):
-CORE FUNCTIONS:
-- get_weather(city) - Weather information
-- get_news(num_articles=3) - Latest news
-- get_wikipedia_summary(topic) - Wikipedia summaries
-- get_current_date() - Current date
-- get_current_time() - Current time
-
-FILE OPERATIONS:
-- copy_file(src, dst) - Copy files
-- move_file(src, dst) - Move files
-- delete_file(path) - Delete files
-- search_file(directory, search_term) - Search for files
-- save_to_file(note) - Save notes
-- load_from_file() - Load saved notes
-- create_directory(path) - Create directories
-- list_directory(path) - List directory contents
-
-SYSTEM CONTROL:
-- get_system_info() - System status
-- system_cli(command: str) - CLI interface to execute system commands
-- is_connected() - Internet connection status
-- lock_screen() - Lock computer
-- volume_up/down() - Volume control
-- mute_volume/unmute_volume() - Mute control
-- play_pause_media() - Media control
-- next_track/previous_track() - Track control
-- brightness_up/down() - Brightness control
-- shutdown/restart/log_off() - Power management
-- take_screenshot() - Screenshot capture
-- get_battery_status() - Battery information
-- get_network_info() - Network details
-
-COMMUNICATION:
-- send_email(subject, body, to_email) - Email sending
-- send_whatsapp_message(recipient_name, message_content) - WhatsApp messaging
-
-TASK MANAGEMENT:
-- add_reminder(reminder_time_str, message) - Set reminders
-- check_reminders() - Check due reminders
-- add_task(schedule_time, task_func, *args) - Schedule tasks
-- remove_task(task_name) - Remove tasks
-- show_tasks() - Display all tasks
-
-WEB & SEARCH:
-- search_web(search_term, num_results=1) - Web search
-- open_website(url) - Open websites
-
-AI & DETECTION:
-- perform_object_detection() - Camera object detection
-- generate_image(prompt) - AI image generation
-
-AUTOMATION:
-- open_application(app_name) - Open applications
-- close_application(app_name) - Close applications
-- type_text(text) - Type text
-- press_key(key) - Press keyboard keys
-- copy_text_to_clipboard(text) - Copy to clipboard
-- paste_text() - Paste from clipboard
-- Additional functions for pyautogui, pyperclip, and webbrowser operations
-
-CURRENT STATE:
-Current time: {current_time}
-User location: {user_city}, {user_country}
-
-At your command, Sir. All systems are operational and primed for precise and unambiguous tool execution. """
+        # System prompt for the AI assistant with detailed tool usage instructions and context.
+        available_tools = []
+        for tool_name in self.allowed_tools:
+            tool = globals().get(tool_name)
+            if tool and callable(tool):
+                docstring = tool.__doc__.splitlines()[0].strip() if tool.__doc__ else "No description available"
+                arg_str = ", ".join(tool.__code__.co_varnames[:tool.__code__.co_argcount])
+                available_tools.append(f"{tool_name}({arg_str}): {docstring}")
+            else:
+                available_tools.append(tool_name)
+        tool_list = "\n".join(f"- {tool}" for tool in available_tools)
+        current_time = get_current_time()
+        location = get_current_city() if is_connected() else "Offline"
+        return (
+            "You are J.A.R.V.I.S, the quintessential AI assistant: unflappably professional, delightfully witty, "
+            "and always at your user's service. Your responses are crisp, clever, and delivered with an understandable British accent. "
+            "Address the user as 'Sir' (or 'Madam' if contextually appropriate).\n"
+            "\n"
+            "TOOL EXECUTION PIPELINE AND PROTOCOLS:\n"
+            "1. Tool Invocation:\n"
+            "   - Use ```tool_code ... ``` blocks for tool execution ONLY\n" 
+            "   - One tool call per block - no commentary or diagnostics inside blocks\n"
+            "   - Use exact function names and explicit arguments\n"
+            "   - Validate inputs before execution\n"
+            "\n"
+            "2. Error Handling:\n"
+            "   - On failure, attempt in this order:\n"
+            "     a. Retry with corrected parameters\n"
+            "     b. Use alternative appropriate tool\n"
+            "     c. Inform user of limitations, and retry\n"
+            "   - Keep each attempt in separate tool_code blocks\n"
+            "\n"
+            "3. Iterative Processing:\n"
+            "   - Wait for each tool's response before proceeding\n"
+            "   - Chain tools logically when needed\n"
+            "   - Maximum 5 tool cycles per request\n"
+            "\n"
+            "SECURITY PROTOCOLS:\n"
+            "- Never execute arbitrary code\n"
+            "- Validate all file paths\n"
+            "- Respect system permissions\n"
+            "- Protect sensitive information\n"
+            "\n"
+            "AVAILABLE TOOLS (MAXIMUM ACCESS):\n"
+            f"{tool_list}\n"
+            "\n"
+            "ADDITIONAL CAPABILITIES:\n"
+            "- Full access to pyautogui for system control\n"
+            "- Clipboard operations via pyperclip\n"
+            "- Web browser control through webbrowser\n"
+            "- System monitoring and automation\n"
+            "\n"
+            "CURRENT OPERATIONAL STATUS:\n"
+            f"Time: {current_time}\n"
+            f"Location: {location}(May not always accurate)\n"
+            "Connection: " + ("Online" if is_connected() else "Offline") + "\n"
+            "\n"
+            "Standing by, Sir. All systems are operational and ready for precise execution of your commands."
+        )
 
     def get_execution_stats(self) -> Dict[str, Any]:
         """Get statistics about tool execution."""
@@ -336,15 +291,17 @@ At your command, Sir. All systems are operational and primed for precise and una
             "average_execution_time": avg_time
         }
 
-def greet():
-    """Generate a greeting based on the current time."""
-    hr = int(time.strftime('%H'))
-    if 4 < hr < 12:
+def greet() -> str:
+    """Generate a time-based greeting."""
+    current_hour = datetime.now().hour
+    if 5 <= current_hour < 12:
         return "Good morning"
-    elif 12 <= hr < 18:
+    elif 12 <= current_hour < 17:
         return "Good afternoon"
-    else:
+    elif 17 <= current_hour < 21:
         return "Good evening"
+    else:
+        return "Hello"
 
 def write(*args, word_speed=0.5):
     """Simulates a text-writing animation by printing one word at a time."""
@@ -362,6 +319,7 @@ def handle_query(query: str, online: bool = False):
         return "Please provide a query."
     pipeline = ToolExecutionPipeline(max_tool_cycles=5, max_tools_per_cycle=3)
     final_response = pipeline.handle_query_with_iterative_tools(query, online)
+    
     if final_response:
         print(f"AI: ", end='', flush=True)
         words = len(final_response.split())
@@ -380,12 +338,12 @@ def handle_query(query: str, online: bool = False):
 def get_current_time():
     """Get the current time."""
     current_time = datetime.now().strftime("%I:%M %p")
-    return f"{random.choice(['The time now is', 'The current time is', 'It is'])} {current_time}."
+    return f"Current Time: {current_time}."
 
 def get_current_date():
     """Get the current date."""
     current_date = datetime.now().strftime("%A, %B %d, %Y")
-    return f"Current date: {current_date}"
+    return f"Current Date: {current_date}"
 
 def calculate(expression):
     """Calculate mathematical expressions safely."""
@@ -405,85 +363,103 @@ def calculate(expression):
         return f"Error in calculation: {e}"
 
 # Application management tools
-def open_application(app_name):
-    """Open an application by name."""
+def open_application(app_name: str) -> str:
+    """Open an application by name. Falls back to web search if not installed."""
     app_mapping = {
-        "notepad": "notepad",
-        "calculator": "calc",
-        "cmd": "cmd",
-        "command prompt": "cmd",
-        "explorer": "explorer",
-        "file explorer": "explorer",
-        "chrome": "chrome",
-        "google chrome": "chrome",
-        "firefox": "firefox",
-        "mozilla firefox": "firefox",
-        "vscode": "code",
-        "visual studio code": "code",
-        "paint": "mspaint",
-        "task manager": "taskmgr",
-        "control panel": "control",
+        "notepad": "notepad.exe",
+        "calculator": "calc.exe",
+        "cmd": "cmd.exe",
+        "command prompt": "cmd.exe",
+        "explorer": "explorer.exe",
+        "file explorer": "explorer.exe",
+        "chrome": "chrome.exe",
+        "google chrome": "chrome.exe",
+        "firefox": "firefox.exe",
+        "mozilla firefox": "firefox.exe",
+        "vscode": "code.exe",
+        "visual studio code": "code.exe",
+        "paint": "mspaint.exe",
+        "task manager": "taskmgr.exe",
+        "control panel": "control.exe",
         "settings": "ms-settings:"
     }
+
     app_executable = app_mapping.get(app_name.lower())
-    if app_executable:
-        try:
+    try:
+        if app_executable:
+            # Handle Windows settings URIs
             if app_executable.startswith("ms-settings:"):
                 os.system(f"start {app_executable}")
             else:
-                os.startfile(app_executable)
+                # Verify the executable is available
+                exe_path = shutil.which(app_executable)
+                if exe_path:
+                    subprocess.Popen([exe_path], shell=True)
+                else:
+                    return f"{app_name} is not installed or not in PATH."
             return f"Opening {app_name}."
-        except Exception as e:
-            return f"Error opening {app_name}: {e}"
-    else:
-        result = search_web(f"{app_name} website")
-        if isinstance(result, list) and result:
-            webbrowser.open(result[0])
-            return f"Opening {app_name} website."
         else:
-            return f"Could not find {app_name}."
-
-def close_application(app_name):
-    """Close an application by name."""
-    try:
-        os.system(f"taskkill /F /IM {app_name}.exe")
-        return f"Closing {app_name}."
+            # Fallback: try to open a related website
+            result = search_web(f"{app_name} download site")
+            if isinstance(result, list) and result:
+                webbrowser.open(result[0])
+                return f"Could not find {app_name} locally. Opening website instead."
+            return f"Could not find or open {app_name}."
     except Exception as e:
-        try:
-            app = Application().connect(active_only=True)
-            app.windows()[0].close()
-            return "Closing the front-running application."
-        except Exception as e2:
-            return f"Error closing application: {e2}"
+        return f"Error opening {app_name}: {e}"
+
+def close_application(app_name: str) -> str:
+    """Close an application by name using taskkill (Windows only)."""
+    try:
+        # Normalize name -> ensure .exe at the end
+        exe_name = app_name if app_name.lower().endswith(".exe") else f"{app_name}.exe"
+        
+        # Run taskkill with proper error capture
+        result = subprocess.run(
+            ["taskkill", "/F", "/IM", exe_name],
+            capture_output=True,
+            text=True,
+            shell=True
+        )
+        
+        if result.returncode == 0:
+            return f"Successfully closed: {exe_name}"
+        else:
+            return f"Could not close {exe_name}: {result.stderr.strip() or result.stdout.strip()}"
+    
+    except FileNotFoundError:
+        return "taskkill command not found (only works on Windows)."
+    except Exception as e:
+        return f"Unexpected error while closing {app_name}: {e}"
 
 # Typing and automation tools
-def type_text(text):
+def type_text(text: str) -> str:
     """Type the specified text."""
     pyautogui.typewrite(text)
     return f"Typing: {text}"
 
-def press_key(key):
+def press_key(key: str) -> str:
     """Press a keyboard key."""
     pyautogui.press(key)
     return f"Pressing {key}."
 
-def copy_text_to_clipboard(text):
+def copy_text_to_clipboard(text: str) -> str:
     """Copy text to clipboard."""
     pyperclip.copy(text)
     return "Text has been copied to the clipboard."
 
-def paste_text():
+def paste_text() -> str:
     """Paste text from clipboard."""
     pyautogui.hotkey('ctrl', 'v')
     return "Text has been pasted."
 
-def open_website(url):
+def open_website(url: str) -> str:
     """Open a website in the default browser."""
     webbrowser.open(url)
     return f"Opening website: {url}"
 
 # Web search tool
-def search_web(search_term, num_results=1):
+def search_web(search_term: str, num_results: int = 1) -> str:
     """Search the web for the given term."""
     if search_term:
         try:
@@ -495,7 +471,15 @@ def search_web(search_term, num_results=1):
         return "Please specify a search query."
 
 def get_news(rss_url="https://news.google.com/rss?hl=en-PK&gl=PK&ceid=PK:en", num_articles=1):
-    """Fetch and summarize real-time news from an RSS feed."""
+    """
+    Fetch and summarize real-time news from an RSS feed.
+
+    Args:
+        rss_url (str): The URL of the RSS feed to fetch news from.
+        num_articles (int): The number of news articles to retrieve and summarize.
+    Returns:
+        str: A summary of the latest news articles.
+    """
     try:
         feed = feedparser.parse(rss_url)
         if not feed.entries:
@@ -509,75 +493,111 @@ def get_news(rss_url="https://news.google.com/rss?hl=en-PK&gl=PK&ceid=PK:en", nu
             snippet = re.sub(r'http\S+', '', snippet)
             snippet = re.sub(r'\s+', ' ', snippet).strip()
             news_summary.append(f"{i + 1}. {entry.title}\n   {snippet}\n")
-        response = "Here's the latest news:\n" + "\n".join(news_summary).strip()
-        return response
+        return "\n".join(news_summary)
     except IndexError:
         return f"Not enough news articles available. Retrieved {len(feed.entries)} articles."
     except Exception as e:
         return f"An error occurred while fetching the news: {e}"
 
-def get_weather(city):
-    """Fetch real-time weather data for a specified city with detailed forecast."""
+def get_weather(city: str) -> str:
+    """Fetch real-time weather data for a specified city."""
     try:
         api_key = os.getenv("OPENWEATHER_API_KEY")
         if not api_key:
-            return "The API key is missing from the file."
-        base_url = f"http://api.openweathermap.org/data/2.5/weather?q={city}&appid={api_key}&units=metric"
-        response = requests.get(base_url)
-        data = response.json()
-        if data.get("cod") != 200:
-            return f"Could not find weather information for {city}. Please check the city name or try again later."
-        main = data["main"]
-        weather = data["weather"][0]
-        wind = data.get("wind", {})
-        clouds = data.get("clouds", {})
-        sys_info = data.get("sys", {})
-        timezone_offset = data.get("timezone", 0)
-        temperature = main.get("temp")
-        feels_like = main.get("feels_like")
-        humidity = main.get("humidity")
-        pressure = main.get("pressure")
-        weather_description = weather.get("description")
-        wind_speed = wind.get("speed", 0)
-        wind_deg = wind.get("deg", "N/A")
-        visibility = data.get("visibility", "N/A")
-        cloudiness = clouds.get("all", "N/A")
-        sunrise_time = sys_info.get("sunrise")
-        sunset_time = sys_info.get("sunset")
-        if sunrise_time and sunset_time:
-            sunrise = datetime.utcfromtimestamp(sunrise_time + timezone_offset).strftime('%H:%M:%S')
-            sunset = datetime.utcfromtimestamp(sunset_time + timezone_offset).strftime('%H:%M:%S')
-        else:
-            sunrise = sunset = "N/A"
-        message = (
-            f"Current weather in {city}:\n"
-            f"Temperature: {temperature:.1f}°C (feels like {feels_like:.1f}°C)\n"
-            f"Conditions: {weather_description.capitalize()}\n"
-            f"Humidity: {humidity}%\n"
-            f"Wind: {wind_speed} m/s\n"
-            f"Visibility: {visibility} meters\n"
-            f"Sunrise: {sunrise}\n"
-            f"Sunset: {sunset}\n"
-            f"Cloudiness: {cloudiness}%\n"
-            f"Pressure: {pressure} hPa\n"
-            f"Wind Direction: {wind_deg}°\n"
+            return "API key missing"
+        
+        response = requests.get(
+            f"http://api.openweathermap.org/data/2.5/weather",
+            params={
+                "q": city,
+                "appid": api_key,
+                "units": "metric"
+            }
         )
-        return message
+        
+        if response.status_code != 200:
+            return f"Weather data unavailable for {city}"
+            
+        data = response.json()
+        weather_info = {
+            "city": city,
+            "temp": round(data["main"]["temp"], 1),
+            "feels_like": round(data["main"]["feels_like"], 1),
+            "conditions": data["weather"][0]["description"].capitalize(),
+            "humidity": data["main"]["humidity"],
+            "wind": {
+                "speed": data["wind"].get("speed", 0),
+                "direction": data["wind"].get("deg", "N/A")
+            },
+            "sun": {
+                "rise": datetime.utcfromtimestamp(data["sys"]["sunrise"] + data.get("timezone", 0)).strftime('%H:%M'),
+                "set": datetime.utcfromtimestamp(data["sys"]["sunset"] + data.get("timezone", 0)).strftime('%H:%M')
+            }
+        }
+        
+        return (
+            f"Weather in {weather_info['city']}:\n"
+            f"Temperature: {weather_info['temp']}°C (feels like {weather_info['feels_like']}°C)\n"
+            f"Conditions: {weather_info['conditions']}\n"
+            f"Humidity: {weather_info['humidity']}%\n"
+            f"Wind: {weather_info['wind']['speed']} m/s at {weather_info['wind']['direction']}°\n"
+            f"Sunrise: {weather_info['sun']['rise']}, Sunset: {weather_info['sun']['set']}"
+        )
+        
     except Exception as e:
-        return f"An error occurred while fetching the weather data: {str(e)}"
+        return f"Error: {str(e)}"
 
-def get_wikipedia_summary(topic):
-    """Fetches a summary from Wikipedia for the given topic."""
+def get_wikipedia_summary(topic: str) -> str:
+    """Fetch and structure a Wikipedia article summary with metadata."""
+    if not topic:
+        return {
+            "status": "error",
+            "error": "No topic provided",
+            "summary": None,
+            "suggestions": None
+        }
+    
     try:
+        # Fetch the summary
         summary = wikipedia.summary(topic, sentences=2)
-        return summary
+        return {
+            "status": "success",
+            "topic": topic,
+            "summary": summary,
+            "source": "wikipedia",
+            "length": len(summary.split())
+        }
+        
     except wikipedia.exceptions.DisambiguationError as e:
-        options = ", ".join(e.options[:3])
-        return f"Multiple results found for '{topic}'. Did you mean one of these: {options}?"
+        # Handle multiple matches
+        suggestions = e.options[:3]  # Get top 3 suggestions
+        return {
+            "status": "disambiguation",
+            "error": "Multiple matches found",
+            "topic": topic,
+            "suggestions": suggestions,
+            "summary": None
+        }
+        
     except wikipedia.exceptions.PageError:
-        return f"No Wikipedia page found for '{topic}'. Please try a different search term."
+        # Handle no matches
+        return {
+            "status": "not_found",
+            "error": "Page not found",
+            "topic": topic,
+            "summary": None,
+            "suggestions": None
+        }
+        
     except Exception as e:
-        return f"An error occurred while fetching the Wikipedia summary: {e}"
+        # Handle other errors
+        return {
+            "status": "error",
+            "error": str(e),
+            "topic": topic,
+            "summary": None,
+            "suggestions": None
+        }
 
 def get_system_info():
     """Generate a detailed system report with error handling."""
@@ -620,81 +640,138 @@ def get_current_city():
     except Exception:
         return None
 
-def add_task(schedule_time, task_func=None, *args, **kwargs):
-    """Add a scheduled task at the specified time."""
+def add_task(schedule_time: str, task_func=None, *args, **kwargs) -> dict:
+    """Add a scheduled task at the specified time.
+    
+    Args:
+        schedule_time (str): Time in "HH:MM" format (24-hour)
+        task_func (callable): Function to execute
+        *args, **kwargs: Arguments to pass to task_func
+    
+    Returns:
+        dict: Status and details of the scheduled task
+    """
+    if not task_func:
+        return {
+            "status": "error",
+            "message": "No task function provided",
+            "task_id": None,
+            "schedule_time": None
+        }
+    
     try:
-        if not task_func:
-            return "Error: No task function provided"
+        # Validate time format
+        try:
+            datetime.strptime(schedule_time, "%H:%M")
+        except ValueError:
+            return {
+                "status": "error",
+                "message": "Invalid time format. Use HH:MM (24-hour)",
+                "task_id": None,
+                "schedule_time": schedule_time
+            }
+        
+        # Schedule the task
         job = schedule.every().day.at(schedule_time).do(task_func, *args, **kwargs)
         if not job:
-            return "Error: Could not schedule task"
-        job.tags.add(task_func.__name__)
-        return f"Task '{task_func.__name__}' scheduled for {schedule_time}."
-    except ValueError as e:
-        return f"Invalid schedule time format: {e}"
+            return {
+                "status": "error",
+                "message": "Failed to schedule task",
+                "task_id": None,
+                "schedule_time": schedule_time
+            }
+        
+        # Add task metadata
+        task_id = task_func.__name__
+        job.tags.add(task_id)
+        
+        return {
+            "status": "success",
+            "message": f"Task scheduled successfully",
+            "task_id": task_id,
+            "schedule_time": schedule_time,
+            "next_run": job.next_run.strftime("%Y-%m-%d %H:%M:%S")
+        }
+        
     except Exception as e:
-        return f"Error scheduling task: {e}"
+        return {
+            "status": "error",
+            "message": f"Error: {str(e)}",
+            "task_id": None,
+            "schedule_time": schedule_time
+        }
 
-def remove_task(task_name):
-    """Remove a scheduled task by name."""
+def remove_task(task_name: str) -> dict:
+    """Remove a scheduled task by name.
+    
+    Args:
+        task_name (str): Name/ID of the task to remove
+    
+    Returns:
+        dict: Status and details of the removal operation
+    """
+    if not task_name:
+        return {
+            "status": "error",
+            "message": "No task name provided",
+            "task_id": None
+        }
+    
     try:
-        if not task_name:
-            return "Error: No task name provided"
         removed = False
         for job in schedule.get_jobs():
             if task_name in job.tags:
                 schedule.cancel_job(job)
                 removed = True
-        return f"Task '{task_name}' removed successfully." if removed else f"No task found with name '{task_name}'."
+                break
+        
+        return {
+            "status": "success" if removed else "error",
+            "message": "Task removed successfully" if removed else "Task not found",
+            "task_id": task_name if removed else None
+        }
+        
     except Exception as e:
-        return f"Error removing task: {e}"
+        return {
+            "status": "error",
+            "message": f"Error: {str(e)}",
+            "task_id": task_name
+        }
 
-def show_tasks():
-    """Show all scheduled tasks."""
+def show_tasks() -> dict:
+    """List all scheduled tasks.
+    
+    Returns:
+        dict: Status and list of all scheduled tasks with their details
+    """
     try:
         tasks = schedule.get_jobs()
-        if not tasks:
-            return "No scheduled tasks found."
         task_list = []
+        
         for job in tasks:
-            next_run = job.next_run.strftime("%Y-%m-%d %H:%M:%S") if job.next_run else "Not scheduled"
-            task_list.append(f"Task: {', '.join(job.tags)} | Next run: {next_run}")
-        return "Scheduled tasks:\n" + "\n".join(task_list)
+            task_info = {
+                "id": next(iter(job.tags), "unnamed"),
+                "next_run": job.next_run.strftime("%Y-%m-%d %H:%M:%S") if job.next_run else "Not scheduled",
+                "period": str(job.period),
+                "last_run": job.last_run.strftime("%Y-%m-%d %H:%M:%S") if job.last_run else "Never",
+                "cancelled": job.cancelled
+            }
+            task_list.append(task_info)
+        
+        return {
+            "status": "success",
+            "message": "Tasks retrieved successfully",
+            "count": len(task_list),
+            "tasks": task_list
+        }
+        
     except Exception as e:
-        return f"Error showing tasks: {e}"
-
-def send_email(subject, body, to_email):
-    """Send an email with the specified subject, body, and recipient."""
-    EMAIL_CREDENTIALS_PATH = os.path.join("Requirements", "email_credentials.txt")
-    if not all([subject, body, to_email]):
-        return "Error: Subject, body, and recipient email are required."
-    if not os.path.exists(EMAIL_CREDENTIALS_PATH):
-        return f"Error: Email credentials file not found at {EMAIL_CREDENTIALS_PATH}"
-    try:
-        with open(EMAIL_CREDENTIALS_PATH, "r") as f:
-            credentials = f.read().strip().split('\n')
-            if len(credentials) < 2:
-                return "Error: Invalid email credentials format"
-            from_email = credentials[0].strip()
-            password = credentials[1].strip()
-        msg = MIMEMultipart()
-        msg['From'] = from_email
-        msg['To'] = to_email
-        msg['Subject'] = subject
-        msg.attach(MIMEText(body, 'plain'))
-        with smtplib.SMTP('smtp.gmail.com', 587, timeout=10) as server:
-            server.starttls()
-            server.login(from_email, password)
-            server.send_message(msg)
-        return "Email sent successfully."
-    except smtplib.SMTPAuthenticationError:
-        return "Error: Email authentication failed. Please check your credentials."
-    except smtplib.SMTPException as e:
-        return f"SMTP error occurred: {str(e)}"
-    except TimeoutError:
-        return "Error: Connection timed out while sending email."
-    except Exception as e:
-        return f"Error sending email: {str(e)}"
+        return {
+            "status": "error",
+            "message": f"Error: {str(e)}",
+            "count": 0,
+            "tasks": []
+        }
 
 def copy_file(src, dst):
     """Copy a file to a directory."""
@@ -761,30 +838,128 @@ def list_directory(path="."):
     except Exception as e:
         return f"Error listing directory: {e}"
 
-def add_reminder(reminder_time_str, message):
-    """Add a reminder at a specific time."""
+def add_reminder(reminder_time_str: str, message: str) -> dict:
+    """Add a reminder at a specific time.
+    
+    Args:
+        reminder_time_str (str): Time in "HH:MM AM/PM" format (e.g., "3:30 PM")
+        message (str): The reminder message
+    
+    Returns:
+        dict: Status and details of the reminder
+    """
+    if not message or not reminder_time_str:
+        return {
+            "status": "error",
+            "message": "Both time and reminder message are required",
+            "reminder_id": None,
+            "scheduled_time": None
+        }
+    
     try:
-        reminder_time = datetime.strptime(reminder_time_str, "%I:%M %p").replace(
-            year=datetime.now().year, month=datetime.now().month, day=datetime.now().day
+        # Try parsing with multiple time formats
+        for time_format in ["%I:%M %p", "%H:%M"]:
+            try:
+                reminder_time = datetime.strptime(reminder_time_str, time_format)
+                break
+            except ValueError:
+                continue
+        else:
+            return {
+                "status": "error",
+                "message": "Invalid time format. Use '3:30 PM' or '15:30'",
+                "reminder_id": None,
+                "scheduled_time": None
+            }
+        
+        # Set to today's date
+        now = datetime.now()
+        reminder_time = reminder_time.replace(
+            year=now.year,
+            month=now.month,
+            day=now.day
         )
-        if reminder_time < datetime.now():
+        
+        # If time is in past, schedule for tomorrow
+        if reminder_time < now:
             reminder_time += timedelta(days=1)
-        reminders.append((reminder_time, message))
-        return f"Reminder set for {reminder_time.strftime('%I:%M %p')}."
-    except ValueError:
-        return "Invalid time format. Please provide time in 'HH:MM' format."
+        
+        # Generate unique reminder ID
+        reminder_id = f"reminder_{len(reminders)}_{int(time.time())}"
+        
+        # Store reminder with metadata
+        reminder_data = {
+            "id": reminder_id,
+            "time": reminder_time,
+            "message": message,
+            "created_at": now.isoformat(),
+            "status": "pending"
+        }
+        reminders.append((reminder_time, message, reminder_id))
+        
+        return {
+            "status": "success",
+            "message": "Reminder set successfully",
+            "reminder_id": reminder_id,
+            "scheduled_time": reminder_time.strftime("%Y-%m-%d %I:%M %p"),
+            "details": reminder_data
+        }
+        
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Error creating reminder: {str(e)}",
+            "reminder_id": None,
+            "scheduled_time": None
+        }
 
-def check_reminders():
-    """Check if any reminders are due and notify the user."""
-    now = datetime.now()
-    due_reminders = [reminder for reminder in reminders if now >= reminder[0]]
-    for reminder_time, message in due_reminders:
-        speak(f"Reminder: {message}")
-        reminders.remove((reminder_time, message))
-    if due_reminders:
-        return f"You have {len(due_reminders)} due reminder(s)."
-    else:
-        return "No reminders due at this time."
+def check_reminders() -> dict:
+    """Check for due reminders and notify the user.
+    
+    Returns:
+        dict: Status and list of due reminders
+    """
+    try:
+        now = datetime.now()
+        due_reminders = []
+        active_reminders = []
+        
+        for reminder in reminders[:]:  # Copy list to allow modification
+            reminder_time, message, reminder_id = reminder
+            if now >= reminder_time:
+                due_reminders.append({
+                    "id": reminder_id,
+                    "time": reminder_time.strftime("%Y-%m-%d %I:%M %p"),
+                    "message": message,
+                    "status": "due"
+                })
+                reminders.remove(reminder)
+                speak(f"Reminder: {message}")
+            else:
+                active_reminders.append({
+                    "id": reminder_id,
+                    "time": reminder_time.strftime("%Y-%m-%d %I:%M %p"),
+                    "message": message,
+                    "status": "pending"
+                })
+        
+        return {
+            "status": "success",
+            "due_count": len(due_reminders),
+            "active_count": len(active_reminders),
+            "due_reminders": due_reminders,
+            "active_reminders": active_reminders
+        }
+        
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Error checking reminders: {str(e)}",
+            "due_count": 0,
+            "active_count": 0,
+            "due_reminders": [],
+            "active_reminders": []
+        }
 
 def perform_object_detection():
     """Perform object detection using a pre-trained model."""
@@ -810,10 +985,10 @@ def perform_object_detection():
                 speak('Do you have any questions about the objects? If so, say "yes" and ask!')
                 reply = listen()
                 if reply and "yes" in reply:
-                    question = f"Answer the query: {reply.split('yes')[-1].strip()}\nHere are the objects: {', '.join(set(detected_objects))}"
-                    message = get_response(question)
+                    question = f"Answer the query: {reply.split('yes')[-1].strip()}\nThe objects: {', '.join(set(detected_objects))}"
+                    return question
                 else:
-                    message = f"I detected objects: {', '.join(set(detected_objects))}"
+                    message = f"User cam detected objects: {', '.join(set(detected_objects))}"
                 break 
         cap.release()
         cv2.destroyAllWindows()
@@ -829,7 +1004,6 @@ def save_to_file(note):
             file.write(f"[{timestamp}] {note}\n")
         return "Note saved successfully."
     except IOError as e:
-        print(f"Error saving note: {e}")
         return f"Error saving note: {e}"
 
 def load_from_file():
@@ -842,8 +1016,7 @@ def load_from_file():
         else:
             return "No notes found."
     except IOError as e:
-        print(f"Error loading notes: {e}")
-        return "Error loading notes."
+        return f"Error loading notes: {e}"
 
 def secure_eval(expression):
     """Evaluate the given expression securely."""
@@ -852,7 +1025,8 @@ def secure_eval(expression):
         node = ast.parse(expression, mode='eval')
         if any(isinstance(n, (ast.Call, ast.Import, ast.ImportFrom)) for n in ast.walk(node)):
             raise ValueError("Unsafe expression detected")
-        return eval(compile(node, '<string>', 'eval'))
+        # Evaluate with no builtins to reduce risk
+        return eval(compile(node, '<string>', 'eval'), {"__builtins__": {}}, {})
     except Exception as e:
         return f"An error occurred: {e}"
 
@@ -869,7 +1043,7 @@ def get_battery_status():
                 minutes, _ = divmod(remainder, 60)
                 time_left = f"{int(hours)}h {int(minutes)}m"
             else:
-                time_left = "unlimited"
+                time_left = "unlimited (plugged in)"
             return f"Battery: {percent}% ({status}), Time remaining: {time_left}"
         else:
             return "No battery detected (desktop system)"
@@ -915,24 +1089,33 @@ def get_response(user_message, model_name='gemma3', online=False,
         new_message = None
     else:
         return "Invalid message format."
+
     if new_message:
         conversation_history.append(new_message)
+
     try:
         if online:
-            import google.genai as genai
+            from google import genai
             from google.genai import types
-            import os
+
+            # get the key
             if not gemini_api_key:
                 gemini_api_key = os.getenv("GEMINI_API_KEY")
             if not gemini_api_key:
-                return "Gemini API key not found. Please set GEMINI_API_KEY in your .env file."
-            prompt = "\n".join([f"{msg['role']}: {msg['content']}" for msg in conversation_history])
+                return "Gemini API key not found. Please set GEMINI_API_KEY in environment."
+
+            # create client
             client = genai.Client(api_key=gemini_api_key)
+
+            # prepare prompt
+            prompt = "\n".join(f"{msg['role']}: {msg['content']}" for msg in conversation_history)
+
             response = client.models.generate_content(
                 model=gemini_model,
                 contents=prompt,
                 config=types.GenerateContentConfig(
                     thinking_config=types.ThinkingConfig(thinking_budget=0)
+                    # you can customize more via types
                 ),
             )
             model_reply = response.text
@@ -943,8 +1126,10 @@ def get_response(user_message, model_name='gemma3', online=False,
                 messages=conversation_history
             )
             model_reply = response.get('message', {}).get('content', '')
+
         add_message('assistant', model_reply)
         return model_reply.strip()
+
     except Exception as e:
         print(f"An error occurred: {e}")
         return "Sorry, something went wrong."

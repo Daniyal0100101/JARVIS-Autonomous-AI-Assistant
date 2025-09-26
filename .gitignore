@@ -1,0 +1,52 @@
+# Python bytecode / cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+
+# Virtual environment
+.venv/
+env/
+venv/
+
+# Build / packaging
+*.egg-info/
+dist/
+build/
+
+# Jupyter notebook checkpoints
+.ipynb_checkpoints/
+
+# Logs / debug
+*.log
+logs/
+
+# Environment files
+.env
+*.env
+
+# VSCode settings
+.vscode/
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Hugging Face / Whisper model caches
+~/.cache/
+huggingface/
+huggingface_hub/
+.cache/
+
+# PyTorch / model checkpoints
+*.pt
+*.pth
+
+# Local database / scratch
+*.sqlite3
+*.db
+
+# Project-specific
+PyWhatKit_DB.txt
+jarvis_notes.txt

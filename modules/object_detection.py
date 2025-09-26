@@ -1,4 +1,3 @@
-# modules/object_detection.py
 import logging, os
 from ultralytics import YOLO
 

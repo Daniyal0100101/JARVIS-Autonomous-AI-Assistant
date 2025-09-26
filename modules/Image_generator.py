@@ -3,63 +3,55 @@ from PIL import Image
 from io import BytesIO
 import os
 
-def get_middle_words(prompt):
-    # Split the prompt into words
-    words = prompt.split()
+def generate_image(prompt: str, filename: str = None) -> str:
+    """
+    Generates an image based on the given prompt using an external API.
+    Args:
+        prompt (str): The text prompt to generate the image.
+        filename (str, optional): The filename to save the generated image. If not provided, a default name will be used.
     
-    # Find the middle two words
-    if len(words) < 2:
-        # If the prompt has fewer than 2 words, use the entire prompt
-        return prompt
-    elif len(words) % 2 == 0:
-        # If even number of words, return the two middle words
-        middle_index = len(words) // 2
-        return f"{words[middle_index - 1]}_{words[middle_index]}"
-    else:
-        # If odd number of words, return the middle word
-        middle_index = len(words) // 2
-        return words[middle_index]
+    Returns:
+        str: A message indicating the status of the image generation and saving process.
+    """
 
-def generate_image(prompt, api_url='https://api.airforce/v1/imagine2'):
     try:
+        api_url='https://api.airforce/v1/imagine2'
         print("Generating image...")
-
-        # Get the middle two words of the prompt
-        middle_words = get_middle_words(prompt)
-        
-        # Generate the filename using the middle two words
-        filename = f'{middle_words}_generated_image.png'
 
         # Define the parameters for the request
         params = {'prompt': prompt}
         
         # Send the GET request
         response = requests.get(api_url, params=params, timeout=10)
+        response.raise_for_status()
+
+        # Open the image using PIL
+        image = Image.open(BytesIO(response.content))
         
-        # Check if the request was successful
-        if response.status_code == 200:
-            # Open the image from the response content
-            image = Image.open(BytesIO(response.content))
-            
-            # Save the image to a file
-            image.save(filename)
-            
-            # Open the image file using the default viewer
-            if os.name == 'nt':  # Windows
-                os.startfile(filename)
-            else:  # macOS or Linux
-                os.system(f'open {filename}' if os.name == 'posix' else f'xdg-open {filename}')
-            
-            return f"I've saved the image as '{filename}' for you!"
+        # Define a default filename if none is provided
+        if not filename:
+            filename = "generated_image.png"
         else:
-            return f"Failed to retrieve image. Status code: {response.status_code}"
+            # Ensure the filename has a valid image extension
+            if not filename.lower().endswith(('.png', '.jpg', '.jpeg')):
+                filename += ".png"
+        
+        # Save the image to the specified file
+        image.save(filename)
+        
+        # Open the image file using the default viewer
+        if os.name == 'nt':  # Windows
+            os.startfile(filename)
+        else:  # macOS and Linux
+            opener = "open" if os.uname().sysname == "Darwin" else "xdg-open"
+            os.system(f"{opener} {filename}")
     
     except requests.exceptions.RequestException as e:
         # Handle any request-related exceptions
-        print(f"Error during request: {e}")
-        return "I'm unable to process the image request due to an error."
+        return f"Error during image generation request: {e}"
     
     except IOError as e:
         # Handle any image-related exceptions
-        print(f"Error saving or opening the image: {e}")
-        return "An error occurred while processing the image."
+        return f"Error saving or opening the image: {e}"
+    except Exception as e:
+        return f"An unexpected error occurred: {e}"
