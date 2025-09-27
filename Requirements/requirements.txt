@@ -112,6 +112,9 @@ pywhatkit
 pygame
 dotenv
 subprocess
+faster-whisper
+torch
+huggingface_hub[hf_xet]
 
 # Install these separately:
 # pip install numpy --only-binary=:all:

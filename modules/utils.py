@@ -459,16 +459,50 @@ def open_website(url: str) -> str:
     return f"Opening website: {url}"
 
 # Web search tool
-def search_web(search_term: str, num_results: int = 1) -> str:
-    """Search the web for the given term."""
-    if search_term:
-        try:
-            results = list(search(search_term, num_results=num_results, lang='en'))
-            return results if results else []
-        except Exception as e:
-            return f"Error performing search: {e}"
-    else:
+def search_web(query: str, num_results: int = 5):
+    """
+    Search the web using SerpApi (Google Search API).
+    Returns a list of search results (title, link, snippet).
+
+    Args:
+        query (str): The search query.
+        num_results (int): Number of results to return.
+    Returns:
+        list: A list of dictionaries with 'title', 'link', and 'snippet' keys.
+    """
+
+    if not query:
         return "Please specify a search query."
+
+    SERPAPI_API_KEY = os.getenv("SERPAPI_API_KEY")
+    if not SERPAPI_API_KEY:
+        return "Error: SERPAPI_API_KEY is not set in environment variables."
+
+    try:
+        url = "https://serpapi.com/search"
+        params = {
+            "engine": "google",
+            "q": query,
+            "num": num_results,
+            "api_key": SERPAPI_API_KEY
+        }
+
+        response = requests.get(url, params=params)
+        response.raise_for_status()
+        data = response.json()
+
+        results = []
+        for item in data.get("organic_results", []):
+            results.append({
+                "title": item.get("title"),
+                "link": item.get("link"),
+                "snippet": item.get("snippet")
+            })
+
+        return results if results else []
+    
+    except Exception as e:
+        return f"Error performing search: {e}"
 
 def get_news(rss_url="https://news.google.com/rss?hl=en-PK&gl=PK&ceid=PK:en", num_articles=1):
     """

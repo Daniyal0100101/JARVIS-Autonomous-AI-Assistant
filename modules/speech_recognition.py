@@ -13,7 +13,11 @@ WHISPER_MODEL_SIZE = "small"  # change to "base", "medium", "large-v3" as needed
 WHISPER_DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 # Load the Whisper model once
-whisper_model = WhisperModel(WHISPER_MODEL_SIZE, device=WHISPER_DEVICE)
+whisper_model = WhisperModel(
+    WHISPER_MODEL_SIZE,
+    device=WHISPER_DEVICE,
+    compute_type="float16" if WHISPER_DEVICE == "cuda" else "int8"
+)
 
 def animate_listening():
     """Animated listening indicator using carriage return."""
