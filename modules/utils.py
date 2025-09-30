@@ -9,11 +9,9 @@ from datetime import datetime, timedelta
 import pyautogui
 import pyperclip
 import psutil
-import cv2
 import shutil
 import ast
 import webbrowser
-from googlesearch import search
 import subprocess
 import html
 import sys
@@ -27,9 +25,9 @@ from .speech_recognition import listen
 from .system_control import (
     system_cli, is_connected, lock_screen, volume_up, volume_down, mute_volume, 
     unmute_volume, play_pause_media, next_track, previous_track, brightness_up, 
-    brightness_down, shutdown, restart, log_off, take_screenshot
+    brightness_down, shutdown, restart, log_off, take_screenshot, Click, capture_camera_image
 )
-from .object_detection import model
+from .image_analysis import analyze_image
 from .hand_gesture_detector import HandGestureDetector
 from .Image_generator import generate_image
 from .apps_automation import send_whatsapp_message, send_email
@@ -62,7 +60,8 @@ class ToolExecutionPipeline:
             'lock_screen', 'volume_up', 'volume_down', 'mute_volume',
             'unmute_volume', 'play_pause_media', 'next_track',
             'previous_track', 'brightness_up', 'brightness_down',
-            'shutdown', 'restart', 'log_off', 'take_screenshot',
+            'shutdown', 'restart', 'log_off', 'take_screenshot', 'Click',
+            'capture_camera_image', 'get_cpu_usage', 'get_memory_usage',
             'get_battery_status', 'get_network_info',
 
             # Communication
@@ -74,8 +73,8 @@ class ToolExecutionPipeline:
             # Web and search
             'search_web', 'open_website',
 
-            # AI and detection
-            'perform_object_detection', 'generate_image',
+            # AI and vision
+            'analyze_image', 'generate_image',
 
             # Application management
             'open_application', 'close_application',
@@ -83,8 +82,8 @@ class ToolExecutionPipeline:
             # Entertainment and interaction
             'handle_gesture_control',
 
-            # Math and calculations
-            'secure_eval', 'calculate',
+            # Math calculations
+            'secure_eval',
 
             # Automation
             'type_text', 'press_key', 'copy_text_to_clipboard', 'paste_text',
@@ -125,7 +124,7 @@ class ToolExecutionPipeline:
             # Add safe builtins to the execution environment
             safe_builtins = {"len": len, "str": str, "int": int, "float": float, "print": print}
 
-            print(f"Executing tool call: {code}")
+            print(f"Tool called: {code}")
             result = eval(code, {"__builtins__": safe_builtins}, local_scope)
             execution_time = time.time() - execution_start
             return {
@@ -173,18 +172,18 @@ class ToolExecutionPipeline:
             execution_results.append(result)
             self.tool_execution_log.append(result)
         return execution_results, has_errors
-
+    
     def handle_query_with_iterative_tools(self, query: str, online: bool = False) -> str:
-        """query handler with iterative tool processing pipeline."""
+        """Query handler with iterative tool processing pipeline."""
         if not query:
             return "Please provide a query."
         current_conversation = []
         try:
-            system_prompt = self.create_system_prompt()
             current_conversation = [
-                {"role": "system", "content": system_prompt},
+                {"role": "system", "content": self.create_system_prompt()},
                 {"role": "user", "content": query}
             ]
+
             tool_cycle_count = 0
             final_response = None
             while tool_cycle_count < self.max_tool_cycles:
@@ -192,28 +191,35 @@ class ToolExecutionPipeline:
                 if not ai_response:
                     final_response = "I apologize, but I couldn't generate a response."
                     break
+
                 tool_results, has_errors = self.process_tool_cycle(ai_response)
                 current_conversation.append({"role": "assistant", "content": ai_response})
+
                 if not tool_results:
                     final_response = ai_response
                     break
+
                 for result in tool_results:
                     content = str(result['result']) if result['success'] else str(result['error'])
                     current_conversation.append({"role": "system", "content": content})
+
                 tool_cycle_count += 1
+
                 if tool_cycle_count >= self.max_tool_cycles:
                     final_response = get_response(current_conversation, online=online)
                     if final_response and self.extract_tool_calls(final_response):
                         final_response = "I've completed the available tool operations. " + \
-                                         re.sub(r'```tool_code.*?```', '', final_response, flags=re.DOTALL).strip()
+                                        re.sub(r'```tool_code.*?```', '', final_response, flags=re.DOTALL).strip()
                     break
+
             self.conversation_history.extend(current_conversation)
             return final_response or "I apologize, but I couldn't complete the request."
+
         except Exception as e:
             error_msg = f"An error occurred while processing your query: {str(e)}"
             print(error_msg)
             return error_msg
-
+        
     def create_system_prompt(self) -> str:
         """Create system prompt with better tool handling instructions."""
         # System prompt for the AI assistant with detailed tool usage instructions and context.
@@ -230,7 +236,7 @@ class ToolExecutionPipeline:
         current_time = get_current_time()
         location = get_current_city() if is_connected() else "Offline"
         return (
-            "You are J.A.R.V.I.S, the quintessential AI assistant: unflappably professional, delightfully witty, "
+            "You are J.A.R.V.I.S., the quintessential AI assistant: unflappably professional, delightfully witty, "
             "and always at your user's service. Your responses are crisp, clever, and delivered with an understandable British accent. "
             "Address the user as 'Sir' (or 'Madam' if contextually appropriate).\n"
             "\n"
@@ -249,15 +255,17 @@ class ToolExecutionPipeline:
             "   - Keep each attempt in separate tool_code blocks\n"
             "\n"
             "3. Iterative Processing:\n"
-            "   - Wait for each tool's response before proceeding\n"
-            "   - Chain tools logically when needed\n"
-            "   - Maximum 5 tool cycles per request\n"
+            "   - After each tool execution, analyze results and decide next steps\n"
+            "   - After tool execution Wait for each tool's response before proceeding\n"
+            "   - Chain tools logically for complex tasks when needed\n"
+            "   - Limit to 3 tools per cycle, max 5 cycles per query\n"
             "\n"
             "SECURITY PROTOCOLS:\n"
-            "- Never execute arbitrary code\n"
-            "- Validate all file paths\n"
-            "- Respect system permissions\n"
-            "- Protect sensitive information\n"
+            "- Never execute arbitrary code outside defined tools\n"
+            "- Validate all file paths and URLs\n"
+            "- Avoid irreversible actions without confirmation\n"
+            "- Respect system permissions and user privacy\n"
+            "- Protect sensitive information at all times\n"
             "\n"
             "AVAILABLE TOOLS (MAXIMUM ACCESS):\n"
             f"{tool_list}\n"
@@ -273,6 +281,7 @@ class ToolExecutionPipeline:
             f"Location: {location}(May not always accurate)\n"
             "Connection: " + ("Online" if is_connected() else "Offline") + "\n"
             "\n"
+            "Creator: Daniyal\n"
             "Standing by, Sir. All systems are operational and ready for precise execution of your commands."
         )
 
@@ -344,23 +353,6 @@ def get_current_date():
     """Get the current date."""
     current_date = datetime.now().strftime("%A, %B %d, %Y")
     return f"Current Date: {current_date}"
-
-def calculate(expression):
-    """Calculate mathematical expressions safely."""
-    WORD_TO_OPERATOR = {
-        'plus': '+', 'add': '+', 'sum': '+',
-        'minus': '-', 'subtract': '-', 'difference': '-',
-        'multiply': '*', 'times': '*', 'product': '*',
-        'divide': '/', 'divided by': '/', 'quotient': '/'
-    }
-    try:
-        for word, operator in WORD_TO_OPERATOR.items():
-            expression = expression.replace(word, operator)
-        expression = ''.join(re.findall(r'[0-9\+\-\*\/\.\(\)\s]+', expression))
-        result = secure_eval(expression)
-        return f"The result of {expression} is: {result}"
-    except Exception as e:
-        return f"Error in calculation: {e}"
 
 # Application management tools
 def open_application(app_name: str) -> str:
@@ -995,41 +987,6 @@ def check_reminders() -> dict:
             "active_reminders": []
         }
 
-def perform_object_detection():
-    """Perform object detection using a pre-trained model."""
-    try:
-        speak("Activating object detection.")
-        cap = cv2.VideoCapture(0)
-        if not cap.isOpened():
-            return "Failed to open camera."
-        detected_objects = []
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                speak("Failed to capture video frame.")
-                break
-            results = model(frame)
-            for *box, conf, cls in results.xyxy[0]:
-                cv2.rectangle(frame, (int(box[0]), int(box[1])), (int(box[2]), int(box[3])), (0, 255, 0), 2)
-                cv2.putText(frame, f"{model.names[int(cls)]} {conf:.2f}", (int(box[0]), int(box[1])-10),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
-                detected_objects.append(model.names[int(cls)])
-            cv2.imshow('Object Detection', frame)
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                speak('Do you have any questions about the objects? If so, say "yes" and ask!')
-                reply = listen()
-                if reply and "yes" in reply:
-                    question = f"Answer the query: {reply.split('yes')[-1].strip()}\nThe objects: {', '.join(set(detected_objects))}"
-                    return question
-                else:
-                    message = f"User cam detected objects: {', '.join(set(detected_objects))}"
-                break 
-        cap.release()
-        cv2.destroyAllWindows()
-        return message
-    except Exception as e:
-        return f"Error in object detection: {e}"
-
 def save_to_file(note):
     """Save the given note to a file."""
     try:
@@ -1115,44 +1072,72 @@ def add_message(role, content):
 def get_response(user_message, model_name='gemma3', online=False,
                  gemini_api_key=None, gemini_model="gemini-2.5-flash"):
     """Get the response from the AI assistant while maintaining conversational history."""
-    global conversation_history
+    import google.genai as genai
+    from google.genai import types
+    import google.api_core.exceptions
+
+    # Step 1: Add user message into conversation history
     if isinstance(user_message, str):
         new_message = {'role': 'user', 'content': user_message}
+        conversation_history.append(new_message)
     elif isinstance(user_message, list):
         conversation_history.extend(user_message)
-        new_message = None
     else:
         return "Invalid message format."
 
-    if new_message:
-        conversation_history.append(new_message)
-
     try:
         if online:
-            from google import genai
-            from google.genai import types
-
-            # get the key
             if not gemini_api_key:
                 gemini_api_key = os.getenv("GEMINI_API_KEY")
             if not gemini_api_key:
                 return "Gemini API key not found. Please set GEMINI_API_KEY in environment."
 
-            # create client
             client = genai.Client(api_key=gemini_api_key)
 
-            # prepare prompt
-            prompt = "\n".join(f"{msg['role']}: {msg['content']}" for msg in conversation_history)
+            # Step 2: Extract and concatenate all system contents (initial prompt + tool results)
+            system_contents = [msg['content'] for msg in conversation_history if msg['role'] == 'system']
+            system_instruction = "\n\n".join(system_contents) if system_contents else None
 
-            response = client.models.generate_content(
-                model=gemini_model,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    thinking_config=types.ThinkingConfig(thinking_budget=0)
-                    # you can customize more via types
-                ),
+            # Step 3: Filter to only user and assistant messages for contents
+            filtered_history = [msg for msg in conversation_history if msg['role'] in ['user', 'assistant']]
+
+            # Step 4: Map roles and create typed contents
+            gemini_contents = []
+            for msg in filtered_history:
+                role = "user" if msg['role'] == 'user' else "model"
+                gemini_contents.append(
+                    types.Content(role=role, parts=[types.Part(text=msg['content'])])
+                )
+
+            # Step 5: Prepare config with system_instruction if present
+            config = types.GenerateContentConfig(
+                thinking_config=types.ThinkingConfig(thinking_budget=-1),
             )
-            model_reply = response.text
+            if system_instruction:
+                config.system_instruction = system_instruction
+
+            # Step 6: Implement retry logic for transient errors
+            max_retries = 3
+            base_delay = 1  # seconds
+            for attempt in range(max_retries):
+                try:
+                    response = client.models.generate_content(
+                        model=gemini_model,
+                        contents=gemini_contents,
+                        config=config,
+                    )
+                    model_reply = response.text or ""
+                    break  # Success, exit retry loop
+                except google.api_core.exceptions.ServiceUnavailable as e:
+                    if attempt < max_retries - 1:
+                        delay = base_delay * (2 ** attempt)  # Exponential backoff
+                        print(f"503 error, retrying in {delay}s... ({attempt + 1}/{max_retries})")
+                        time.sleep(delay)
+                    else:
+                        raise e  # Last attempt failed, raise the error
+                except Exception as e:
+                    raise e  # Non-503 errors, raise immediately
+
         else:
             import ollama
             response = ollama.chat(
@@ -1161,9 +1146,13 @@ def get_response(user_message, model_name='gemma3', online=False,
             )
             model_reply = response.get('message', {}).get('content', '')
 
-        add_message('assistant', model_reply)
+        # Step 7: Append assistant reply to history
+        conversation_history.append({'role': 'assistant', 'content': model_reply})
         return model_reply.strip()
 
+    except google.api_core.exceptions.ServiceUnavailable:
+        print("All retries failed due to model overload.")
+        return "The AI service is currently overloaded. Please try again later."
     except Exception as e:
         print(f"An error occurred: {e}")
         return "Sorry, something went wrong."

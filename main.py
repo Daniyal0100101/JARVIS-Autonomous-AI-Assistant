@@ -150,7 +150,6 @@ def main():
 
     subtitle_text = Text("Your Personal AI Assistant", style="italic cyan", justify="center")
     
-    console.clear()
     console.print(title_panel)
     console.print(Align.center(subtitle_text))
     console.print("\n")
@@ -175,7 +174,7 @@ def main():
     console.print(separator)
     speak(greeting)
 
-    mode = 'text' if not online else 'voice' # Just to start in text mode;  
+    mode = 'text' if not online else 'voice' # Just to start in text mode;
 
     while True:
         try:

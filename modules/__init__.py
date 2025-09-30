@@ -15,7 +15,7 @@ contacts = {
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # Define constants
-NOTE_FILE_PATH = "notes.txt"
+NOTE_FILE_PATH = "jarvis_notes.txt"
 
 WORD_TO_OPERATOR = {
     '+': '+',

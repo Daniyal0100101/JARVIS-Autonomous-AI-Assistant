@@ -117,14 +117,47 @@ def log_off():
     except Exception as e:
         return f"Failed to log off: {e}"
 
-def take_screenshot():
-    """Take a screenshot of the current screen and save it as a PNG file."""
+def take_screenshot(filename: str  = "screenshot.png") -> str:
+    """Take a screenshot and save it to the specified filename. Defaults to 'screenshot.png'."""
     try:
         screenshot = pyautogui.screenshot()
-        screenshot.save("screenshot.png")
+        screenshot.save(filename)
         return "Screenshot taken successfully."
     except Exception as e:
         return f"Failed to take screenshot: {e}"
+
+def capture_camera_image(filename: str = "camera_image.png") -> str:
+    """Capture an image from the webcam and save it to the specified filename. Defaults to 'camera_image.png'."""
+
+    try:
+        import cv2
+        cap = cv2.VideoCapture(0)
+
+        if not cap.isOpened():
+            return "Failed to access the camera."
+        ret, frame = cap.read()
+        if ret:
+            cv2.imwrite(filename, frame)
+            cap.release()
+            cv2.destroyAllWindows()
+            return "Camera image captured successfully."
+        else:
+            cap.release()
+            cv2.destroyAllWindows()
+            return "Failed to capture image from camera."
+        
+    except ImportError:
+        return "OpenCV is not installed. Please install it with 'pip install opencv-python'."
+    except Exception as e:
+        return f"Failed to capture camera image: {e}"
+
+def Click(x: int, y: int):
+    """Simulate a mouse click at the specified (x, y) coordinates."""
+    try:
+        pyautogui.click(x, y)
+        return f"Clicked at ({x}, {y}) successfully."
+    except Exception as e:
+        return f"Failed to click at ({x}, {y}): {e}"
 
 def system_cli(command: str):
     """A compact CLI interface to execute safe commands only."""
