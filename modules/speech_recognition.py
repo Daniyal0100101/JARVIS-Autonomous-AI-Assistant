@@ -7,6 +7,13 @@ import torch
 from faster_whisper import WhisperModel
 import threading
 
+# Import listening_active flag
+try:
+    from .interrupt_handler import listening_active
+except ImportError:
+    # Create fallback event if interrupt_handler doesn't exist
+    listening_active = threading.Event()
+
 # ---------------------------
 # Global Whisper model (loaded once)
 # ---------------------------
@@ -45,85 +52,93 @@ def listen(timeout=15, phrase_time_limit=60, max_retries=2):
     Returns:
     - Recognized text as a string if successful, or None if recognition fails.
     """
-    recognizer = sr.Recognizer()
-    recognizer.dynamic_energy_threshold = True
-    recognizer.energy_threshold = 300  # Initial energy threshold
-    recognizer.dynamic_energy_adjustment_damping = 0.1  # Faster adaptation
-    recognizer.dynamic_energy_ratio = 1.5  # Adjust sensitivity to voice vs. noise
+    # Signal that main listening is active
+    listening_active.set()
+    
+    try:
+        recognizer = sr.Recognizer()
+        recognizer.dynamic_energy_threshold = True
+        recognizer.energy_threshold = 300  # Initial energy threshold
+        recognizer.dynamic_energy_adjustment_damping = 0.1  # Faster adaptation
+        recognizer.dynamic_energy_ratio = 1.5  # Adjust sensitivity to voice vs. noise
 
-    for attempt in range(max_retries + 1):
-        try:
-            with sr.Microphone() as source:
-                # Adjust for ambient noise dynamically
-                recognizer.adjust_for_ambient_noise(source, duration=0.5)
+        for attempt in range(max_retries + 1):
+            try:
+                with sr.Microphone() as source:
+                    # Adjust for ambient noise dynamically
+                    recognizer.adjust_for_ambient_noise(source, duration=0.5)
 
-                # Start listening animation
-                stop_listen = threading.Event()
-                listen_thread = threading.Thread(target=animate_status, args=("Listening", stop_listen))
-                listen_thread.start()
+                    # Start listening animation
+                    stop_listen = threading.Event()
+                    listen_thread = threading.Thread(target=animate_status, args=("Listening", stop_listen))
+                    listen_thread.start()
 
-                try:
-                    # Listen for audio input
-                    audio = recognizer.listen(
-                        source,
-                        timeout=timeout,
-                        phrase_time_limit=phrase_time_limit
-                    )
-                    stop_listen.set()
-                    listen_thread.join()
+                    try:
+                        # Listen for audio input
+                        audio = recognizer.listen(
+                            source,
+                            timeout=timeout,
+                            phrase_time_limit=phrase_time_limit
+                        )
+                        stop_listen.set()
+                        listen_thread.join()
 
-                    # Start recognizing animation
-                    stop_recognize = threading.Event()
-                    recognize_thread = threading.Thread(target=animate_status, args=("Recognizing", stop_recognize))
-                    recognize_thread.start()
+                        # Start recognizing animation
+                        stop_recognize = threading.Event()
+                        recognize_thread = threading.Thread(target=animate_status, args=("Recognizing", stop_recognize))
+                        recognize_thread.start()
 
-                    # Transcribe audio using Faster-Whisper
-                    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tf:
-                        tf.write(audio.get_wav_data())
-                        temp_path = tf.name
+                        # Transcribe audio using Faster-Whisper
+                        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tf:
+                            tf.write(audio.get_wav_data())
+                            temp_path = tf.name
 
-                    segments, _ = whisper_model.transcribe(temp_path, beam_size=7)  # Increased beam_size for better accuracy
-                    text = " ".join([seg.text for seg in segments]).strip()
+                        segments, _ = whisper_model.transcribe(temp_path, beam_size=7)  # Increased beam_size for better accuracy
+                        text = " ".join([seg.text for seg in segments]).strip()
 
-                    stop_recognize.set()
-                    recognize_thread.join()
+                        stop_recognize.set()
+                        recognize_thread.join()
 
-                    if text:
-                        print(f"\rUser said: {text}")
-                        return text
+                        if text:
+                            print(f"\rUser said: {text}")
+                            return text
 
-                except sr.UnknownValueError:
-                    stop_listen.set()
-                    listen_thread.join()
-                    if attempt < max_retries:
-                        # Silently adjust for next attempt
-                        recognizer.energy_threshold *= 1.2
-                        recognizer.adjust_for_ambient_noise(source, duration=0.3)
-                    continue
+                    except sr.UnknownValueError:
+                        stop_listen.set()
+                        listen_thread.join()
+                        if attempt < max_retries:
+                            # Silently adjust for next attempt
+                            recognizer.energy_threshold *= 1.2
+                            recognizer.adjust_for_ambient_noise(source, duration=0.3)
+                        continue
 
-                except sr.WaitTimeoutError:
-                    stop_listen.set()
-                    listen_thread.join()
-                    continue  # Retry silently on timeout
+                    except sr.WaitTimeoutError:
+                        stop_listen.set()
+                        listen_thread.join()
+                        continue  # Retry silently on timeout
 
-                except sr.RequestError as e:
-                    stop_listen.set()
-                    listen_thread.join()
-                    speak(f"Speech service error: {e}")
-                    return None
+                    except sr.RequestError as e:
+                        stop_listen.set()
+                        listen_thread.join()
+                        speak(f"Speech service error: {e}")
+                        return None
 
-                except Exception as e:
-                    stop_listen.set()
-                    listen_thread.join()
-                    speak(f"Recognition error: {e}")
-                    return None
+                    except Exception as e:
+                        stop_listen.set()
+                        listen_thread.join()
+                        speak(f"Recognition error: {e}")
+                        return None
 
-        except OSError as e:
-            speak(f"Microphone error: {e}")
-            return None
+            except OSError as e:
+                speak(f"Microphone error: {e}")
+                return None
 
-        except Exception as e:
-            speak(f"Audio input error: {e}")
-            return None
+            except Exception as e:
+                speak(f"Audio input error: {e}")
+                return None
 
-    return None
+        return None
+        
+    finally:
+        # Clear listening flag when done
+        listening_active.clear()

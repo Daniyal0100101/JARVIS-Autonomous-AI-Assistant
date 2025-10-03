@@ -158,6 +158,14 @@ def main():
         return  # Exit if authentication fails
 
     online = is_connected()
+    
+    # Initialize interrupt handler silently
+    try:
+        from modules.interrupt_handler import init_interrupt_handler, cleanup_interrupt_handler
+        init_interrupt_handler()
+    except ImportError:
+        cleanup_interrupt_handler = None
+    
     greeting = get_greeting(online)
 
     # --- Modern separator and greeting ---
@@ -174,52 +182,58 @@ def main():
     console.print(separator)
     speak(greeting)
 
-    mode = 'text' if not online else 'voice' # Just to start in text mode;
+    mode = 'text' if not online else 'voice'  # Just to start in text mode
 
-    while True:
-        try:
-            query = listen() if mode == 'voice' else input("You: ")
-            if query:
-                mode = handle_query_input(query, mode, online)
-                if mode is None:
-                    break
+    try:
+        while True:
+            try:
+                query = listen() if mode == 'voice' else input("\nYou: ")
+                if query:
+                    mode = handle_query_input(query, mode, online)
+                    if mode is None:
+                        break
 
-        except KeyboardInterrupt:
-            interrupt_message = random.choice([
-                "\nUser interruption detected. Exiting the system.",
-                "\nSession terminated by user command. Logging off.",
-                "\nManual override acknowledged. Shutting down operations."
-            ])
-            console.print(f"[yellow]{interrupt_message}[/yellow]")
-            speak(interrupt_message)
-            break
+            except KeyboardInterrupt:
+                interrupt_message = random.choice([
+                    "\nUser interruption detected. Exiting the system.",
+                    "\nSession terminated by user command. Logging off.",
+                    "\nManual override acknowledged. Shutting down operations."
+                ])
+                console.print(f"[yellow]{interrupt_message}[/yellow]")
+                speak(interrupt_message)
+                break
 
-        except sr.UnknownValueError:
-            error_message = random.choice([
-                "I’m sorry, I didn’t catch that. Could you please repeat?",
-                "My apologies, sir. I couldn’t understand that. Could you say it again?",
-                "I'm afraid I missed that. Would you mind repeating?"
-            ])
-            console.print(f"[red]{error_message}[/red]")
-            speak(error_message)
+            except sr.UnknownValueError:
+                error_message = random.choice([
+                    "I'm sorry, I didn't catch that. Could you please repeat?",
+                    "My apologies, sir. I couldn't understand that. Could you say it again?",
+                    "I'm afraid I missed that. Would you mind repeating?"
+                ])
+                console.print(f"[red]{error_message}[/red]")
+                speak(error_message)
 
-        except sr.RequestError as e:
-            error_message = random.choice([
-                f"Error connecting to speech recognition service: {e}. System functionality may be limited.",
-                f"Speech recognition service unavailable: {e}. Please check your connection.",
-                f"Speech recognition service failed: {e}. Awaiting further instructions."
-            ])
-            console.print(f"[red]{error_message}[/red]")
-            speak(error_message)
+            except sr.RequestError as e:
+                error_message = random.choice([
+                    f"Error connecting to speech recognition service: {e}. System functionality may be limited.",
+                    f"Speech recognition service unavailable: {e}. Please check your connection.",
+                    f"Speech recognition service failed: {e}. Awaiting further instructions."
+                ])
+                console.print(f"[red]{error_message}[/red]")
+                speak(error_message)
 
-        except Exception as e:
-            error_message = random.choice([
-                f"An unexpected error occurred: {e}. Attempting to recover.",
-                f"System error detected: {e}. Please wait while I address this.",
-                f"Critical error encountered: {e}. Implementing fail-safe protocols."
-            ])
-            console.print(f"[red]{error_message}[/red]")
-            speak(error_message)
+            except Exception as e:
+                error_message = random.choice([
+                    f"An unexpected error occurred: {e}. Attempting to recover.",
+                    f"System error detected: {e}. Please wait while I address this.",
+                    f"Critical error encountered: {e}. Implementing fail-safe protocols."
+                ])
+                console.print(f"[red]{error_message}[/red]")
+                speak(error_message)
+    
+    finally:
+        # Cleanup interrupt handler
+        if cleanup_interrupt_handler:
+            cleanup_interrupt_handler()
 
 if __name__ == "__main__":
     main()

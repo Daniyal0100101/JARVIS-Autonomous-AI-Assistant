@@ -6,8 +6,16 @@ warnings.filterwarnings("ignore", message="pkg_resources is deprecated as an API
 os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "hide"
 import pygame
 import requests
+import threading
 from typing import Union, Optional
 from .system_control import is_connected
+
+# Import interrupt handler
+try:
+    from .interrupt_handler import tts_interrupt_event
+except ImportError:
+    # Fallback if interrupt_handler doesn't exist yet
+    tts_interrupt_event = threading.Event()
 
 def generate_audio(message: str, voice: str = "Matthew") -> Union[None, bytes]:
     """
@@ -31,22 +39,40 @@ def generate_audio(message: str, voice: str = "Matthew") -> Union[None, bytes]:
         print(f"Error fetching audio from StreamElements API: {e}")
         return None
 
-def play_audio_with_pygame(file_path: str) -> None:
+def play_audio_with_pygame(filepath: str) -> None:
     """
-    Play an audio file using pygame.
-
-    :param file_path: Path to the audio file to be played.
+    Play audio file using pygame mixer with interrupt support.
+    :param filepath: Path to the audio file.
     """
+    # Import interrupt flag
+    try:
+        from .interrupt_handler import tts_interrupt_event
+    except ImportError:
+        import threading
+        tts_interrupt_event = threading.Event()
+    
     try:
         pygame.mixer.init()
-        pygame.mixer.music.load(file_path)
+        pygame.mixer.music.load(filepath)
         pygame.mixer.music.play()
+
+        # Check for interruption every 100ms
+        clock = pygame.time.Clock()
         while pygame.mixer.music.get_busy():
-            pygame.time.Clock().tick(10)  # Wait until the audio finishes playing
-    except Exception as e:
+            if tts_interrupt_event.is_set():
+                pygame.mixer.music.stop()
+                break
+            clock.tick(10)  # Check 10 times per second
+            
+    except pygame.error as e:
         print(f"Error playing audio with pygame: {e}")
+    except Exception as e:
+        print(f"Unexpected error during audio playback: {e}")
     finally:
-        pygame.mixer.quit()
+        try:
+            pygame.mixer.quit()
+        except:
+            pass
 
 def speak_audio(message: str, voice: str = "Matthew", folder: Optional[str] = None, extension: str = ".mp3") -> Union[None, str]:
     """

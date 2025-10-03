@@ -86,7 +86,4 @@ def analyze_image(
     return ans
 
 # Example usage (standalone test)
-# if __name__ == "__main__":
-    # img = "current_screen.png"
-    # print("Overview:", analyze_image(img))
-    # print("Query:", analyze_image(img, "What is in the image displayed?"))
+# print(analyze_image(image_path='current_screen_for_analysis.png', visual_query='What is in this image?'))

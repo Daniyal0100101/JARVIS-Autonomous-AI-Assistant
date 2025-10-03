@@ -189,7 +189,20 @@ class ToolExecutionPipeline:
             while tool_cycle_count < self.max_tool_cycles:
                 ai_response = get_response(current_conversation, online=online)
                 if not ai_response:
-                    final_response = "I apologize, but I couldn't generate a response."
+                    # Gather only the last user message and all following system/tool results
+                    last_user = next((m for m in reversed(current_conversation) if m['role'] == 'user'), None)
+                    if last_user:
+                        user_idx = current_conversation.index(last_user)
+                        minimal_context = [last_user] + [
+                            m for m in current_conversation[user_idx + 1:] if m['role'] == 'system'
+                        ]
+                    else:
+                        minimal_context = []
+
+                    # Add a prompt to encourage the model to use just these
+                    minimal_context.append({"role": "user", "content": "Please answer based only on the above tool results and my question."})
+                    time.sleep(1)
+                    ai_response = get_response(minimal_context, online=online) or "I'm sorry, I couldn't generate a response."
                     break
 
                 tool_results, has_errors = self.process_tool_cycle(ai_response)
@@ -311,10 +324,23 @@ def greet() -> str:
         return "Hello"
 
 def write(*args, word_speed=0.5):
-    """Simulates a text-writing animation by printing one word at a time."""
+    """Simulates a text-writing animation by printing one word at a time with interrupt support."""
+    try:
+        from .interrupt_handler import tts_interrupt_event
+    except ImportError:
+        tts_interrupt_event = threading.Event()
+    
     text = ' '.join(map(str, args))
     words = text.split()
-    for word in words:
+    for i, word in enumerate(words):
+        # Check for interrupt before each word
+        if tts_interrupt_event.is_set():
+            # Print all remaining text instantly
+            remaining = ' '.join(words[i:])
+            sys.stdout.write(remaining)
+            sys.stdout.flush()
+            break
+        
         sys.stdout.write(word + " ")
         sys.stdout.flush()
         time.sleep(word_speed)
@@ -322,24 +348,71 @@ def write(*args, word_speed=0.5):
 
 def handle_query(query: str, online: bool = False):
     """Handle the user's query and provide the appropriate response."""
+    # Import interrupt handler
+    try:
+        from .interrupt_handler import (
+            tts_interrupt_event,
+            interrupt_handler,
+            enable_interrupt_detection,
+            disable_interrupt_detection
+        )
+    except ImportError:
+        tts_interrupt_event = threading.Event()
+        interrupt_handler = None
+        enable_interrupt_detection = lambda: None
+        disable_interrupt_detection = lambda: None
+    
     if not query:
         return "Please provide a query."
+
+    # Clear any previous interrupts before starting
+    if interrupt_handler:
+        tts_interrupt_event.clear()
+
     pipeline = ToolExecutionPipeline(max_tool_cycles=5, max_tools_per_cycle=3)
     final_response = pipeline.handle_query_with_iterative_tools(query, online)
-    
+
     if final_response:
         print(f"AI: ", end='', flush=True)
+        
+        # Calculate word speed
         words = len(final_response.split())
         avg_speaking_rate = 150  # words per minute
         estimated_speech_duration = (words / avg_speaking_rate) * 60 if words > 0 else 0.4
         word_speed = estimated_speech_duration / words if words > 0 else 0.4
-        text_thread = threading.Thread(target=write, args=(final_response,), kwargs={'word_speed': word_speed})
-        speak_thread = threading.Thread(target=speak, args=(final_response.strip(),))
-        text_thread.start()
-        speak_thread.start()
-        text_thread.join()
-        speak_thread.join()
-        print()
+
+        # Enable interrupt detection before starting response
+        enable_interrupt_detection()
+
+        try:
+            # YOUR EXISTING THREADING - unchanged
+            text_thread = threading.Thread(target=write, args=(final_response,), kwargs={'word_speed': word_speed})
+            speak_thread = threading.Thread(target=speak, args=(final_response.strip(),))
+
+            text_thread.start()
+            speak_thread.start()
+
+            # Monitor for interrupts while threads run
+            while text_thread.is_alive() or speak_thread.is_alive():
+                if interrupt_handler and tts_interrupt_event.is_set():
+                    # Interrupt detected - just break and let threads finish
+                    break
+                time.sleep(0.05)
+
+            text_thread.join()
+            speak_thread.join()
+
+            print()
+            
+            # If interrupted, just clear the flag - main loop will call listen() next
+            if interrupt_handler and tts_interrupt_event.is_set():
+                interrupt_handler.clear_interrupt()
+                    
+        finally:
+            # Always disable interrupt detection when response is done
+            disable_interrupt_detection()
+
+    return final_response if final_response else "I couldn't process that request."
 
 # Core utility functions
 def get_current_time():
