@@ -29,7 +29,7 @@ from .system_control import (
 )
 from .image_analysis import analyze_image
 from .hand_gesture_detector import HandGestureDetector
-from .Image_generator import generate_image
+from .image_generator import generate_image
 from .apps_automation import send_whatsapp_message, send_email
 from modules import *
 
