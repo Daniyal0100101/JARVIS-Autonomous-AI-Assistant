@@ -17,29 +17,26 @@ import html
 import sys
 import threading
 from dotenv import load_dotenv
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Tuple, Optional
 
 # Import custom modules (consolidated)
 from .text_to_speech import speak
-from .speech_recognition import listen
-from .system_control import (
-    system_cli, is_connected, lock_screen, volume_up, volume_down, mute_volume, 
-    unmute_volume, play_pause_media, next_track, previous_track, brightness_up, 
+from .speech_recognition import listen  # noqa: F401
+from .system_control import (  # noqa: F401
+    system_cli, is_connected, lock_screen, volume_up, volume_down, mute_volume,
+    unmute_volume, play_pause_media, next_track, previous_track, brightness_up,
     brightness_down, shutdown, restart, log_off, take_screenshot, Click, capture_camera_image
 )
-from .image_analysis import analyze_image
-from .hand_gesture_detector import HandGestureDetector
-from .image_generator import generate_image
-from .apps_automation import send_whatsapp_message, send_email
-from modules import *
+from .image_analysis import analyze_image  # noqa: F401
+from .hand_gesture_detector import HandGestureDetector  # noqa: F401
+from .image_generator import generate_image  # noqa: F401
+from .apps_automation import send_whatsapp_message, send_email  # noqa: F401
+from modules import reminders, conversation_history, NOTE_FILE_PATH
 
 # Load environment variables from .env file
 load_dotenv()
 
-import re
-import ast
-import time
-from typing import List, Dict, Any, Tuple, Optional
+
 
 class ToolExecutionPipeline:
     """tool execution pipeline with iterative processing capabilities."""
@@ -341,7 +338,7 @@ class ToolExecutionPipeline:
                     break
 
                 for result in tool_results:
-                    content = str(result['result']) if result['success'] else str(result['error'])
+                    
                     # Use structured system messages so LLM sees [TOOL-SUCCESS]/[TOOL-ERROR] affordances
                     if result['success']:
                         system_msg = f"[TOOL-SUCCESS] {result['code']} -> {repr(result['result'])} (t={result['execution_time']:.3f}s)"
@@ -519,8 +516,11 @@ def handle_query(query: str, online: bool = False):
     except ImportError:
         tts_interrupt_event = threading.Event()
         interrupt_handler = None
-        enable_interrupt_detection = lambda: None
-        disable_interrupt_detection = lambda: None
+        def enable_interrupt_detection():
+            pass
+
+        def disable_interrupt_detection():
+            pass
     
     if not query:
         return "Please provide a query."

@@ -26,12 +26,13 @@ logs/
 .env
 *.env
 
-# VSCode settings
+# VSCode and IDE settings
 .vscode/
 
 # System files
 .DS_Store
 Thumbs.db
+GEMINI.md
 
 # Hugging Face / Whisper model caches
 ~/.cache/
@@ -50,3 +51,7 @@ huggingface_hub/
 # Project-specific
 PyWhatKit_DB.txt
 jarvis_notes.txt
+
+# Sensitive local data
+modules/password.py
+modules/contacts.py

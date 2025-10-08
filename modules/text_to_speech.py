@@ -71,8 +71,8 @@ def play_audio_with_pygame(filepath: str) -> None:
     finally:
         try:
             pygame.mixer.quit()
-        except:
-            pass
+        except Exception as e:
+            print(f"Error quitting pygame mixer: {e}")
 
 def speak_audio(message: str, voice: str = "Matthew", folder: Optional[str] = None, extension: str = ".mp3") -> Union[None, str]:
     """

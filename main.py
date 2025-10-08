@@ -1,5 +1,7 @@
-import random, time
-import hashlib, getpass
+import random
+import time
+import hashlib
+import getpass
 from modules.text_to_speech import speak
 from modules.speech_recognition import listen, sr
 from modules.system_control import is_connected
@@ -21,7 +23,7 @@ console = Console()
 logging.disable(logging.CRITICAL)
 
 # Hash the imported password 
-STORED_PASSWORD_HASH = hashlib.sha256(PASSWORD.encode()).hexdigest()
+STORED_PASSWORD_HASH = hashlib.sha256(PASSWORD.password.encode()).hexdigest()
 
 def authenticate_user(attempts: int = 3):  # Allow three attempts
     """Authenticates the user by verifying the password."""
