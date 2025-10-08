@@ -1,80 +1,335 @@
 # Jarvis AI Assistant
 
-A "Jarvis-like" AI assistant for Windows, written in Python. It provides a rich, interactive command-line interface for controlling the system and accessing various AI-powered features. The assistant can be operated through both voice and text commands and includes a password-based authentication system.
+A powerful, voice-enabled AI assistant for Windows built with Python. Jarvis provides an interactive command-line interface with rich visual feedback, combining voice and text input with advanced system control and AI-powered features.
 
-## Core Functionalities
+![Python](https://img.shields.io/badge/python-3.10+-blue.svg)
+![License](https://img.shields.io/badge/license-MIT-green.svg)
+![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)
 
-*   **Speech Recognition:** Utilizes the `faster-whisper` model for accurate and efficient speech-to-text transcription, enabling the assistant to understand spoken commands quickly and reliably.
-*   **Text-to-Speech (TTS):** Employs the StreamElements API for high-quality online TTS and `pyttsx3` as an offline fallback.
-*   **System Control:** Offers a wide range of system commands, including screen lock, volume and media control, brightness adjustment, and power options (shutdown, restart, log off). It can also capture screenshots and camera images.
-*   **Application Automation:** Capable of sending WhatsApp messages and emails.
-*   **AI-Powered Tools:**
-    *   **Image Generation:** Generates images from text prompts using models like DALL-E 3.
-    *   **Image Analysis:** Analyzes images using the Gemini model.
-*   **Hand Gesture Control:** Uses `mediapipe` and `opencv-python` for mouse control and gesture-based actions like clicks and taking screenshots.
-*   **Connectivity Awareness:** Automatically detects internet connectivity and adjusts its features accordingly (e.g., switching between online and offline TTS).
+## 🌟 Key Features
 
-## Installation
+### 🎤 Voice & Speech
+- **Faster-Whisper Speech Recognition**: High-accuracy, efficient speech-to-text transcription
+- **Dual TTS System**: StreamElements API for online TTS with `pyttsx3` offline fallback
+- **Voice/Text Mode Switching**: Seamlessly switch between input modes during conversation
+- **Interrupt Detection**: Stop AI responses mid-sentence with new commands
 
-The project has a significant number of dependencies. An installation script is provided to streamline the process.
+### 🖥️ System Control
+- **Power Management**: Shutdown, restart, log off
+- **Media Controls**: Play/pause, next/previous track, volume adjustment
+- **Display**: Brightness control, screenshot capture
+- **Security**: Screen lock, password-protected authentication
+
+### 🤖 AI-Powered Tools
+- **Image Generation**: Create images from text prompts using DALL-E 3
+- **Image Analysis**: Analyze images with Google Gemini vision models
+- **Conversational AI**: Context-aware responses using Gemini or local Ollama models
+- **Tool Execution Pipeline**: Iterative tool processing with limits to Prevent unintentional behavior.
+
+### ✋ Hand Gesture Control
+- Real-time hand tracking using MediaPipe and OpenCV
+- Mouse control via hand movements
+- Gesture-based clicks and actions
+
+### 🌐 Connectivity & Information
+- **Weather**: Real-time weather data via OpenWeatherMap
+- **News**: RSS feed aggregation with Google News
+- **Web Search**: SerpApi integration for Google search results
+- **Wikipedia**: Quick topic summaries
+
+### 📧 Communication & Automation
+- **Email**: Send emails programmatically
+- **WhatsApp**: Automated WhatsApp messaging
+- **Task Scheduling**: Schedule tasks at specific times
+- **Reminders**: Set time-based reminders with notifications
+- **File Operations**: Copy, move, delete, search files
+
+### 💻 Application Management
+- Open and close applications by name
+- Keyboard automation (typing, key presses)
+- Clipboard operations (copy/paste)
+
+## 📋 Prerequisites
+
+- **Operating System**: Windows 10/11
+- **Python**: 3.10 or higher
+- **Internet Connection**: Required for online features (Gemini API, TTS, weather, news)
+
+## 🚀 Installation
+
+### 1. Clone the Repository
+
+```bash
+git clone https://github.com/Daniyal0100101/JARVIS-Autonomous-AI-Assistant.git
+cd JARVIS-Autonomous-AI-Assistant
+```
+
+### 2. Install Dependencies
+
+Run the provided installation script:
 
 ```bash
 python install_requirements.py
 ```
 
-**Note:** Some packages may require manual installation steps as noted in `Requirements/requirements.txt`.
+**Note**: Some packages may require manual installation check code if needed.
 
-## Configuration
+### 3. Configure Environment Variables
 
-Before running the assistant, you need to configure the following:
+Create a `.env` file in the root directory:
 
-*   **Environment Variables:** Create a `.env` file in the root directory with the following keys:
-    *   `GEMINI_API_KEY`: Your API key for Google Gemini.
-    *   `EMAIL_ADDRESS`: Your email address for sending emails.
-    *   `EMAIL_PASSWORD`: Your email password.
-    *   `OPENWEATHER_API_KEY`: Your API key for OpenWeatherMap.
-    *   `SERPAPI_API_KEY`: Your API key for SerpApi (Google Search API).
+```env
+# Required for AI features
+GEMINI_API_KEY=your_gemini_api_key_here
 
-*   **Password:** Create a `password.py` file in the `modules` directory and define a `password` variable with your desired password for authentication.
+# Required for email functionality
+EMAIL_ADDRESS=your_email@example.com
+EMAIL_PASSWORD=your_app_specific_password
 
-    ```python
-    # modules/password.py
-    password = "your_secret_password"
-    ```
+# Required for weather data
+OPENWEATHER_API_KEY=your_openweather_api_key_here
 
-*   **Contacts:** Create a `contacts.py` file in the `modules` directory with a dictionary of contacts for sending WhatsApp messages.
+# Required for web search
+SERPAPI_API_KEY=your_serpapi_key_here
+```
 
-    ```python
-    # modules/contacts.py
-    contacts = {
-        "contact_name": "+1234567890",
-        # Add more contacts here
-    }
-    ```
+**Getting API Keys:**
+- **Gemini API**: [Google AI Studio](https://aistudio.google.com/app/api-keys)
+- **OpenWeatherMap**: [OpenWeather API](https://openweathermap.org/api)
+- **SerpApi**: [SerpApi Dashboard](https://serpapi.com/)
 
+### 4. Set Up Authentication
 
+Create `modules/password.py`:
 
-## Execution
+```python
+# modules/password.py
+password = "your_secure_password_here"
+```
 
-The main entry point of the application is `main.py`.
+**Security Note**: The password is hashed using SHA-256. Never commit this file to version control.
+
+### 5. Configure Contacts (Optional)
+
+Create `modules/contacts.py` for WhatsApp messaging:
+
+```python
+# modules/contacts.py
+contacts = {
+    "john": "+1234567890",
+    "jane": "+0987654321",
+    # Add more contacts as needed
+}
+```
+
+## 🎯 Usage
+
+### Starting Jarvis
 
 ```bash
 python main.py
 ```
 
-## Contributing
+### Authentication
 
-Contributions are welcome! If you have any ideas, suggestions, or bug reports, please open an issue on the GitHub repository.
+Upon launch, you'll be prompted to enter your password (3 attempts allowed). The password is securely masked during input.
 
-If you want to contribute code, please follow these steps:
+### Command Modes
 
-1.  Fork the repository.
-2.  Create a new branch (`git checkout -b feature/your-feature-name`).
-3.  Make your changes.
-4.  Commit your changes (`git commit -m 'Add some feature'`).
-5.  Push to the branch (`git push origin feature/your-feature-name`).
-6.  Open a pull request.
+#### Voice Mode
+- Speak naturally to Jarvis
+- Requires online connectivity
+- Automatically processes speech-to-text
 
-## License
+#### Text Mode
+- Type commands at the prompt
+- Works offline for local operations
+- Faster for precise commands
 
-This project is licensed under the MIT License. See the `LICENSE` file for details.
+**Switch modes:**
+```
+"switch to voice mode"
+"switch to text mode"
+```
+
+### Example Commands
+
+```
+# System Control
+"lock the screen"
+"increase volume"
+"take a screenshot"
+"shutdown in 10 minutes"
+
+# Information
+"what's the weather in Lahore?"
+"get me the latest news"
+"search for Python tutorials"
+"tell me about quantum computing"
+
+# File Operations
+"create a directory called projects"
+"search for config.json in Documents"
+"copy file.txt to Desktop"
+
+# Communication
+"send an email to john@example.com"
+"send a WhatsApp message to john"
+
+# AI Features
+"generate an image of a sunset over mountains"
+"analyze the image on my desktop"
+
+# Scheduling
+"remind me to call mom at 3:30 PM"
+"add a task at 09:00"
+"show my tasks"
+
+# Automation
+"open calculator"
+"close chrome"
+"type Hello World"
+```
+
+## 🛠️ Architecture
+
+### Tool Execution Pipeline
+
+Jarvis uses an iterative tool execution system:
+
+1. **Query Processing**: User input is analyzed by the AI model
+2. **Tool Extraction**: AI generates `tool_code` blocks with function calls
+3. **Validation**: Code is validated for security (AST parsing, whitelist checking)
+4. **Execution**: Approved tools are executed in a sandboxed environment
+5. **Feedback Loop**: Results feed back to the AI for up to 5 cycles
+6. **Response Generation**: Final answer synthesized from tool results
+
+### Security Features
+
+- **Sandboxed Execution**: Only whitelisted functions can be called
+- **AST Validation**: All tool code is parsed and validated before execution
+- **No Arbitrary Code**: Only direct function calls with literal arguments allowed
+- **Password Hashing**: SHA-256 hashing for authentication
+- **Permission Checks**: System operations respect user permissions
+
+## 📁 Project Structure
+
+```
+jarvis-ai-assistant/
+│
+├── main.py                          # Entry point
+├── install_requirements.py          # Dependency installer
+├── .env                            # Environment variables 
+├── README.md                       # This file
+├── LICENSE                         # MIT License
+│
+└── modules/
+    ├── __init__.py
+    ├── password.py                 # Authentication (create this)
+    ├── contacts.py                 # Contact list (create this)
+    ├── utils.py                    # Core utilities and tool pipeline
+    ├── text_to_speech.py          # TTS functionality
+    ├── speech_recognition.py      # STT functionality
+    ├── system_control.py          # System operations
+    ├── image_analysis.py          # Image analysis tools
+    ├── image_generator.py         # Image generation tools
+    ├── hand_gesture_detector.py   # Gesture control
+    ├── apps_automation.py         # Email/WhatsApp automation
+    ├── interrupt_handler.py       # Interrupt detection
+```
+
+## ⚙️ Configuration
+
+### Customizing the AI Model
+
+**Online Mode (Gemini)**:
+Edit `utils.py` to change the model:
+```python
+gemini_model="gemini-2.5-flash"  # or "gemini-2.5-pro"
+```
+
+**Offline Mode (Ollama)**:
+```python
+model_name='gemma3'  # or 'llama3.2', 'mistral', etc.
+```
+
+### Tool Pipeline Settings
+
+Adjust in `ToolExecutionPipeline` class:
+```python
+pipeline = ToolExecutionPipeline(
+    max_tool_cycles=5,          # Maximum iteration cycles
+    max_tools_per_cycle=3       # Tools per cycle
+)
+```
+
+## 🔧 Troubleshooting
+
+### Speech Recognition Issues
+- Ensure microphone permissions are granted
+- Check microphone is set as default input device
+- Test with: `python -m speech_recognition`
+
+### API Errors
+- Verify API keys in `.env` file
+- Check API rate limits and quotas
+- Ensure internet connectivity for online features
+
+### Import Errors
+- Run `python install_requirements.py` again
+- Manually install missing packages: `pip install package_name`
+- Check Python version compatibility (3.10+)
+
+### Hand Gesture Control Not Working
+- Install latest OpenCV: `pip install opencv-python --upgrade`
+- Ensure camera permissions are granted
+- Test camera with: `python -c "import cv2; print(cv2.__version__)"`
+
+## 🤝 Contributing
+
+Contributions are welcome! Follow these steps:
+
+1. **Fork** the repository
+2. **Create** a feature branch: `git checkout -b feature/your-feature-name`
+3. **Commit** your changes: `git commit -m 'Add some feature'`
+4. **Push** to the branch: `git push origin feature/your-feature-name`
+5. **Open** a pull request
+
+### Coding Standards
+- Follow PEP 8 style guidelines
+- Add docstrings to all functions
+- Include type hints where applicable
+- Write comprehensive error handling
+
+## 📝 License
+
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+
+## 🙏 Acknowledgments
+
+- **Api.Airforce**: DALL-E 3 for image generation
+- **Google**: Gemini AI models
+- **OpenWeatherMap**: Weather data API
+- **SerpApi**: Google search integration
+- **MediaPipe**: Hand tracking technology
+
+## 📞 Support
+
+For issues, questions, or suggestions:
+- **GitHub Issues**: [Open an issue](https://github.com/Daniyal0100101/JARVIS-Autonomous-AI-Assistant/issues)
+
+## 🗺️ Roadmap
+
+- [ ] Multi-language support
+- [ ] Cross-platform compatibility (macOS, Linux)
+- [ ] Web interface with React frontend
+- [ ] Voice customization options
+- [ ] Plugin system for extensibility
+- [ ] Cloud sync for conversation history
+- [ ] Mobile companion app
+
+---
+
+**Built with ❤️ by [Daniyal](https://github.com/Daniyal0100101)**
+
+*Star ⭐ this repository if you find it helpful!*

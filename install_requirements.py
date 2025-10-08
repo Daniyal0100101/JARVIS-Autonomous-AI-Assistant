@@ -1,7 +1,7 @@
 import subprocess
 import sys, os
 
-file_path = "Requirements/requirements.txt"
+file_path = "requirements.txt"
 
 def encoder(file_path):
     import chardet
