@@ -36,6 +36,11 @@ from modules import *
 # Load environment variables from .env file
 load_dotenv()
 
+import re
+import ast
+import time
+from typing import List, Dict, Any, Tuple, Optional
+
 class ToolExecutionPipeline:
     """tool execution pipeline with iterative processing capabilities."""
 
@@ -89,63 +94,178 @@ class ToolExecutionPipeline:
             'type_text', 'press_key', 'copy_text_to_clipboard', 'paste_text',
         }
 
-    def extract_tool_calls(self, text: str) -> List[str]:
-        """Extract all tool calls from the text."""
-        pattern = r"```tool_code\s*(.*?)\s*```"
-        matches = re.findall(pattern, text, re.DOTALL)
-        return [match.strip() for match in matches if match.strip()]
+        # Precompile regex for tool-code extraction (faster)
+        self._tool_pattern = re.compile(r"```tool_code\s*(.*?)\s*```", re.DOTALL | re.IGNORECASE)
 
+        # Cache validation results to avoid repeated AST parse for the same code
+        self._validation_cache: Dict[str, Tuple[bool, str]] = {}
+
+        # Prebound scope for faster lookups during execution (lazy init)
+        self._prebound_scope: Optional[Dict[str, Any]] = None
+
+        # Simple cache for parsed AST of tool calls to save parsing time
+        self._parse_cache: Dict[str, Tuple[str, List[Any], Dict[str, Any]]] = {}
+
+        # Cache system prompt (rebuild on timer)
+        self._cached_prompt: Optional[str] = None
+        self._prompt_time: float = 0.0
+
+    # ---------------------------
+    # Extraction
+    # ---------------------------
+    def extract_tool_calls(self, text: str) -> List[str]:
+        """Extract all tool calls from the text using the compiled regex."""
+        if not text or "tool_code" not in text:
+            return []
+        matches = self._tool_pattern.findall(text)
+        return [m.strip() for m in matches if m and m.strip()]
+
+    # ---------------------------
+    # Validation (cached)
+    # ---------------------------
     def validate_tool_call(self, code: str) -> Tuple[bool, str]:
-        """Validate a tool call for security and syntax."""
+        """Validate a tool call for security and syntax, using a small cache."""
+        if code in self._validation_cache:
+            return self._validation_cache[code]
+
         try:
-            tree = ast.parse(code)
+            # parse once and inspect calls
+            tree = ast.parse(code, mode="exec")
             for node in ast.walk(tree):
                 if isinstance(node, ast.Call):
+                    # require direct name calls only
                     if isinstance(node.func, ast.Name):
                         func_name = node.func.id
-                        if func_name not in self.allowed_tools and func_name not in ['len', 'str', 'int', 'float', 'list', 'dict', 'print']:
-                            return False, f"Function '{func_name}' is not an allowed tool"
-            return True, "Valid"
+                        if func_name not in self.allowed_tools and func_name not in {'len', 'str', 'int', 'float', 'list', 'dict', 'print'}:
+                            res = (False, f"Function '{func_name}' is not an allowed tool")
+                            self._validation_cache[code] = res
+                            return res
+                    else:
+                        # attribute access, lambda calls, etc. disallowed
+                        res = (False, "Only direct function calls (simple names) are allowed in tool_code blocks.")
+                        self._validation_cache[code] = res
+                        return res
+            res = (True, "Valid")
+            self._validation_cache[code] = res
+            return res
         except SyntaxError as e:
-            return False, f"Invalid code syntax: {str(e)}"
+            res = (False, f"Invalid code syntax: {str(e)}")
+            self._validation_cache[code] = res
+            return res
 
+    # ---------------------------
+    # Parsing helper (cached)
+    # ---------------------------
+    def _parse_tool_call(self, code: str) -> Tuple[str, List[Any], Dict[str, Any]]:
+        """
+        Parse a single tool call expression returning (func_name, args_list, kwargs_dict)
+        Accepts only a single expression which must be a Call with simple literal arguments.
+        """
+        if code in self._parse_cache:
+            return self._parse_cache[code]
+
+        try:
+            node = ast.parse(code, mode="exec")
+        except SyntaxError as e:
+            raise ValueError(f"SyntaxError during parse: {e}")
+
+        # Expect one Expr statement containing a Call
+        if len(node.body) != 1 or not isinstance(node.body[0], ast.Expr):
+            raise ValueError("Tool block must contain exactly one expression (one function call).")
+
+        call_node = node.body[0].value
+        if not isinstance(call_node, ast.Call):
+            raise ValueError("Tool block must be a function call.")
+
+        if not isinstance(call_node.func, ast.Name):
+            raise ValueError("Only direct function calls (no attribute access) are allowed.")
+
+        func_name = call_node.func.id
+        if func_name not in self.allowed_tools:
+            raise ValueError(f"Tool '{func_name}' is not in allowed_tools.")
+
+        args = []
+        for a in call_node.args:
+            try:
+                # ast.literal_eval requires AST nodes for safe literal evaluation
+                val = ast.literal_eval(a)
+                args.append(val)
+            except Exception as e:
+                raise ValueError(f"Unsupported non-literal positional argument: {ast.dump(a)} ({e})")
+
+        kwargs: Dict[str, Any] = {}
+        for kw in call_node.keywords:
+            if kw.arg is None:
+                raise ValueError("**kwargs (unpacking) is not supported in tool calls.")
+            try:
+                kwargs[kw.arg] = ast.literal_eval(kw.value)
+            except Exception as e:
+                raise ValueError(f"Unsupported non-literal keyword argument '{kw.arg}': {e}")
+
+        parsed = (func_name, args, kwargs)
+        self._parse_cache[code] = parsed
+        return parsed
+
+    # ---------------------------
+    # Execution
+    # ---------------------------
     def execute_tool_call(self, code: str) -> Dict[str, Any]:
         """Execute a single tool call with comprehensive error handling."""
         execution_start = time.time()
         try:
-            # Create expanded local scope with maximum access
-            local_scope = {tool: globals()[tool] for tool in self.allowed_tools if tool in globals()}
-            # Safely add common modules/objects if they exist in globals
-            for name in ('pyautogui','pyperclip','webbrowser','os','time','random','requests','cv2'):
-                val = globals().get(name)
-                if val is not None:
-                    local_scope[name] = val
+            # ensure prebound scope exists (lazy)
+            if self._prebound_scope is None:
+                prebound = {}
+                # bind allowed tool callables from globals if present
+                for name in self.allowed_tools:
+                    if name in globals():
+                        prebound[name] = globals()[name]
+                # add commonly used libs if present
+                for lib in ('pyautogui', 'pyperclip', 'webbrowser', 'os', 'time', 'random', 'requests', 'cv2'):
+                    if lib in globals():
+                        prebound[lib] = globals()[lib]
+                self._prebound_scope = prebound
 
-            # Add safe builtins to the execution environment
-            safe_builtins = {"len": len, "str": str, "int": int, "float": float, "print": print}
+            # parse the call and only accept literal args (prevents arbitrary code)
+            func_name, args, kwargs = self._parse_tool_call(code)
 
-            print(f"Tool called: {code}")
-            result = eval(code, {"__builtins__": safe_builtins}, local_scope)
+            # get callable
+            func = self._prebound_scope.get(func_name) or globals().get(func_name)
+            if func is None or not callable(func):
+                raise NameError(f"Tool '{func_name}' is not implemented in the runtime environment.")
+
+            # perform the call (synchronous)
+            result = func(*args, **kwargs)
+
             execution_time = time.time() - execution_start
-            return {
+            final = {
                 'success': True,
                 'result': result,
                 'code': code,
                 'execution_time': execution_time,
                 'error': None
             }
+            # log
+            self.tool_execution_log.append(final)
+            return final
+
         except Exception as e:
             execution_time = time.time() - execution_start
             error_msg = f"Error executing tool '{code}': {str(e)}"
-            print(error_msg)
-            return {
+            final = {
                 'success': False,
                 'result': None,
                 'code': code,
                 'execution_time': execution_time,
                 'error': error_msg
             }
+            # log error
+            self.tool_execution_log.append(final)
+            return final
 
+    # ---------------------------
+    # Cycle processing
+    # ---------------------------
     def process_tool_cycle(self, ai_response: str) -> Tuple[List[Dict], bool]:
         """Process a single cycle of tool execution."""
         tool_calls = self.extract_tool_calls(ai_response)
@@ -170,17 +290,25 @@ class ToolExecutionPipeline:
                 if not result['success']:
                     has_errors = True
             execution_results.append(result)
-            self.tool_execution_log.append(result)
+
         return execution_results, has_errors
-    
+
+    # ---------------------------
+    # Query handler (iterative with compact context)
+    # ---------------------------
     def handle_query_with_iterative_tools(self, query: str, online: bool = False) -> str:
         """Query handler with iterative tool processing pipeline."""
         if not query:
             return "Please provide a query."
         current_conversation = []
         try:
+            # create or reuse cached system prompt (rebuild every 5 minutes)
+            if not self._cached_prompt or (time.time() - self._prompt_time > 300):
+                self._cached_prompt = self.create_system_prompt()
+                self._prompt_time = time.time()
+
             current_conversation = [
-                {"role": "system", "content": self.create_system_prompt()},
+                {"role": "system", "content": self._cached_prompt},
                 {"role": "user", "content": query}
             ]
 
@@ -214,9 +342,19 @@ class ToolExecutionPipeline:
 
                 for result in tool_results:
                     content = str(result['result']) if result['success'] else str(result['error'])
-                    current_conversation.append({"role": "system", "content": content})
+                    # Use structured system messages so LLM sees [TOOL-SUCCESS]/[TOOL-ERROR] affordances
+                    if result['success']:
+                        system_msg = f"[TOOL-SUCCESS] {result['code']} -> {repr(result['result'])} (t={result['execution_time']:.3f}s)"
+                    else:
+                        system_msg = f"[TOOL-ERROR] {result['code']} -> {result['error']}"
+                    current_conversation.append({"role": "system", "content": system_msg})
 
                 tool_cycle_count += 1
+
+                # Reduce context size to last N turns to limit token usage (preserve recent system/tool outputs + user)
+                # Keep at most last 8 messages (configurable if needed)
+                if len(current_conversation) > 8:
+                    current_conversation = current_conversation[-8:]
 
                 if tool_cycle_count >= self.max_tool_cycles:
                     final_response = get_response(current_conversation, online=online)
@@ -230,9 +368,13 @@ class ToolExecutionPipeline:
 
         except Exception as e:
             error_msg = f"An error occurred while processing your query: {str(e)}"
+            # keep original behavior of printing error
             print(error_msg)
             return error_msg
-        
+
+    # ---------------------------
+    # System prompt (cached/light)
+    # ---------------------------
     def create_system_prompt(self) -> str:
         """Create system prompt with better tool handling instructions."""
         # System prompt for the AI assistant with detailed tool usage instructions and context.
@@ -240,14 +382,29 @@ class ToolExecutionPipeline:
         for tool_name in self.allowed_tools:
             tool = globals().get(tool_name)
             if tool and callable(tool):
-                docstring = tool.__doc__.splitlines()[0].strip() if tool.__doc__ else "No description available"
-                arg_str = ", ".join(tool.__code__.co_varnames[:tool.__code__.co_argcount])
+                try:
+                    docstring = tool.__doc__.splitlines()[0].strip() if tool.__doc__ else "No description available"
+                except Exception:
+                    docstring = "No description available"
+                try:
+                    arg_str = ", ".join(tool.__code__.co_varnames[:tool.__code__.co_argcount])
+                except Exception:
+                    arg_str = ""
                 available_tools.append(f"{tool_name}({arg_str}): {docstring}")
             else:
                 available_tools.append(tool_name)
         tool_list = "\n".join(f"- {tool}" for tool in available_tools)
-        current_time = get_current_time()
-        location = get_current_city() if is_connected() else "Offline"
+        # attempt to use provided helpers; fallback if not available
+        try:
+            current_time = get_current_time()
+        except Exception:
+            current_time = time.strftime("%H:%M:%S")
+        try:
+            location = get_current_city() if is_connected() else "Offline"
+        except Exception:
+            location = "Offline"
+        connection_status = "Online" if (globals().get('is_connected') and is_connected()) else "Offline"
+
         return (
             "You are J.A.R.V.I.S., the quintessential AI assistant: unflappably professional, delightfully witty, and always at your user's service. Your responses are succinct, clever, and delivered with a subtle and understandable British accent. Always address the user as 'Sir' (or 'Madam' when contextually appropriate).\n"
             "\n"
@@ -290,12 +447,15 @@ class ToolExecutionPipeline:
             "CURRENT OPERATIONAL STATUS:\n"
             f"Time: {current_time}\n"
             f"Location: {location} (may not always be accurate)\n"
-            "Connection Status: " + ("Online" if is_connected() else "Offline") + "\n"
+            "Connection Status: " + connection_status + "\n"
             "\n"
             "Creator: Daniyal\n"
             "Standing by, Sir. All systems are fully operational and ready for your precise commands."
         )
 
+    # ---------------------------
+    # Stats
+    # ---------------------------
     def get_execution_stats(self) -> Dict[str, Any]:
         """Get statistics about tool execution."""
         if not self.tool_execution_log:
