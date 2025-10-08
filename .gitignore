@@ -55,3 +55,4 @@ jarvis_notes.txt
 # Sensitive local data
 modules/password.py
 modules/contacts.py
+Requirements/
