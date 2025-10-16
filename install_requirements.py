@@ -5,10 +5,10 @@ import platform
 
 
 def detect_requirements_file() -> str:
-    """Choose the best requirements file: prefer 'Requirements/requirements.txt' then 'requirements.txt'."""
+    """Choose the best requirements file: prefer root 'requirements.txt' then 'Requirements/requirements.txt'."""
     candidates = [
-        os.path.join("Requirements", "requirements.txt"),
         "requirements.txt",
+        os.path.join("Requirements", "requirements.txt"),
     ]
     for p in candidates:
         if os.path.exists(p):
