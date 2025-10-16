@@ -7,6 +7,7 @@ import wikipedia
 import schedule
 from datetime import datetime, timedelta
 import pyautogui
+import platform as _platform
 import pyperclip
 import psutil
 import shutil
@@ -587,37 +588,70 @@ def get_current_date():
 
 # Application management tools
 def open_application(app_name: str) -> str:
-    """Open an application by name. Falls back to web search if not installed."""
-    app_mapping = {
-        "notepad": "notepad.exe",
-        "calculator": "calc.exe",
-        "cmd": "cmd.exe",
-        "command prompt": "cmd.exe",
-        "explorer": "explorer.exe",
-        "file explorer": "explorer.exe",
-        "chrome": "chrome.exe",
-        "google chrome": "chrome.exe",
-        "firefox": "firefox.exe",
-        "mozilla firefox": "firefox.exe",
-        "vscode": "code.exe",
-        "visual studio code": "code.exe",
-        "paint": "mspaint.exe",
-        "task manager": "taskmgr.exe",
-        "control panel": "control.exe",
-        "settings": "ms-settings:"
-    }
+    """Open an application by name (OS-aware)."""
+    system = _platform.system()
+    if system == "Windows":
+        app_mapping = {
+            "notepad": "notepad.exe",
+            "calculator": "calc.exe",
+            "cmd": "cmd.exe",
+            "command prompt": "cmd.exe",
+            "explorer": "explorer.exe",
+            "file explorer": "explorer.exe",
+            "chrome": "chrome.exe",
+            "google chrome": "chrome.exe",
+            "firefox": "firefox.exe",
+            "mozilla firefox": "firefox.exe",
+            "vscode": "code.exe",
+            "visual studio code": "code.exe",
+            "paint": "mspaint.exe",
+            "task manager": "taskmgr.exe",
+            "control panel": "control.exe",
+            "settings": "ms-settings:"
+        }
+    elif system == "Darwin":
+        app_mapping = {
+            "textedit": "TextEdit",
+            "notes": "Notes",
+            "calculator": "Calculator",
+            "terminal": "Terminal",
+            "finder": "Finder",
+            "safari": "Safari",
+            "chrome": "Google Chrome",
+            "firefox": "Firefox",
+            "vscode": "Visual Studio Code",
+            "music": "Music",
+            "settings": "System Settings"
+        }
+    else:
+        app_mapping = {
+            "terminal": "x-terminal-emulator",
+            "files": "nautilus",
+            "chrome": "google-chrome",
+            "firefox": "firefox",
+            "vscode": "code",
+        }
 
     app_executable = app_mapping.get(app_name.lower())
     try:
         if app_executable:
-            # Handle Windows settings URIs
-            if app_executable.startswith("ms-settings:"):
-                os.system(f"start {app_executable}")
+            if system == "Windows":
+                if app_executable.startswith("ms-settings:"):
+                    os.system(f"start {app_executable}")
+                else:
+                    exe_path = shutil.which(app_executable)
+                    if exe_path:
+                        subprocess.Popen([exe_path], shell=True)
+                    else:
+                        return f"{app_name} is not installed or not in PATH."
+            elif system == "Darwin":
+                result = subprocess.run(["open", "-a", app_executable], capture_output=True, text=True)
+                if result.returncode != 0:
+                    return f"Could not open {app_name}: {result.stderr.strip()}"
             else:
-                # Verify the executable is available
                 exe_path = shutil.which(app_executable)
                 if exe_path:
-                    subprocess.Popen([exe_path], shell=True)
+                    subprocess.Popen([exe_path])
                 else:
                     return f"{app_name} is not installed or not in PATH."
             return f"Opening {app_name}."
@@ -632,26 +666,28 @@ def open_application(app_name: str) -> str:
         return f"Error opening {app_name}: {e}"
 
 def close_application(app_name: str) -> str:
-    """Close an application by name using taskkill (Windows only)."""
+    """Close an application by name using OS-specific methods."""
     try:
-        # Normalize name -> ensure .exe at the end
-        exe_name = app_name if app_name.lower().endswith(".exe") else f"{app_name}.exe"
-        
-        # Run taskkill with proper error capture
-        result = subprocess.run(
-            ["taskkill", "/F", "/IM", exe_name],
-            capture_output=True,
-            text=True,
-            shell=True
-        )
-        
-        if result.returncode == 0:
-            return f"Successfully closed: {exe_name}"
+        system = _platform.system()
+        if system == "Windows":
+            exe_name = app_name if app_name.lower().endswith(".exe") else f"{app_name}.exe"
+            result = subprocess.run(["taskkill", "/F", "/IM", exe_name], capture_output=True, text=True, shell=True)
+            if result.returncode == 0:
+                return f"Successfully closed: {exe_name}"
+            else:
+                return f"Could not close {exe_name}: {result.stderr.strip() or result.stdout.strip()}"
+        elif system == "Darwin":
+            result = subprocess.run(["osascript", "-e", f'tell application "{app_name}" to quit'], capture_output=True, text=True)
+            if result.returncode == 0:
+                return f"Successfully requested quit: {app_name}"
+            return f"Could not quit {app_name}: {result.stderr.strip()}"
         else:
-            return f"Could not close {exe_name}: {result.stderr.strip() or result.stdout.strip()}"
-    
+            result = subprocess.run(["killall", "-q", app_name], capture_output=True, text=True)
+            if result.returncode == 0:
+                return f"Successfully closed: {app_name}"
+            return f"Could not close {app_name}: {result.stderr.strip() or result.stdout.strip()}"
     except FileNotFoundError:
-        return "taskkill command not found (only works on Windows)."
+        return "Close application command not found for this OS."
     except Exception as e:
         return f"Unexpected error while closing {app_name}: {e}"
 
@@ -672,8 +708,12 @@ def copy_text_to_clipboard(text: str) -> str:
     return "Text has been copied to the clipboard."
 
 def paste_text() -> str:
-    """Paste text from clipboard."""
-    pyautogui.hotkey('ctrl', 'v')
+    """Paste text from clipboard (OS-aware)."""
+    system = _platform.system()
+    if system == "Darwin":
+        pyautogui.hotkey('command', 'v')
+    else:
+        pyautogui.hotkey('ctrl', 'v')
     return "Text has been pasted."
 
 def open_website(url: str) -> str:

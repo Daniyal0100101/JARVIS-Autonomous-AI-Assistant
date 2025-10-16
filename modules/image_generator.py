@@ -61,7 +61,8 @@ def generate_image(prompt: str, filename: str = None, model: str = "dall-e-3", s
         if os.name == "nt":
             os.startfile(filename)
         else:
-            opener = "open" if hasattr(os, "uname") and os.uname().sysname == "Darwin" else "xdg-open"
+            # macOS vs Linux opener
+            opener = "open" if (hasattr(os, "uname") and os.uname().sysname == "Darwin") else "xdg-open"
             os.system(f"{opener} {filename}")
 
         return f"Image saved as {filename} (model={model}, size={size})"
@@ -78,3 +79,4 @@ def generate_image(prompt: str, filename: str = None, model: str = "dall-e-3", s
 #         filename="cyberpunk_city.png"
 #     )
 #     print(result)
+

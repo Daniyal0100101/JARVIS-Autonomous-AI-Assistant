@@ -33,17 +33,17 @@ def authenticate_user(attempts: int = 3):  # Allow three attempts
             # Securely get the password without showing it in the console
             password = getpass.getpass("\nEnter password: ")
             if verify_password(password):
-                console.print("[green]✔ Authentication successful. Access granted.[/green]")
+                console.print("[green]Authentication successful. Access granted.[/green]")
                 speak("Authentication successful.")
                 return True
             else:
-                console.print("[red]✖ Incorrect password. Try again.[/red]")
+                console.print("[red]Incorrect password. Try again.[/red]")
                 speak("Incorrect password. Try again.")
                 time.sleep(1.5)  # Pause to let the user see the message
         except KeyboardInterrupt:
             break
 
-    console.print("[bold red]✖ Authentication failed. System locked.[/bold red]")
+    console.print("[bold red]Authentication failed. System locked.[/bold red]")
     speak("Authentication failed. System locked.")
     return False
 
@@ -171,7 +171,7 @@ def main():
     greeting = get_greeting(online)
 
     # --- Modern separator and greeting ---
-    separator = Text("─" * 80, style="dim")
+    separator = Text("-" * 80, style="dim")
     greeting_panel = Panel(
         Align.center(Text(greeting, style="bold green")),
         title="[bold blue]Welcome[/bold blue]",
@@ -239,3 +239,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

@@ -4,7 +4,7 @@ A powerful, voice-enabled AI assistant for Windows built with Python. Jarvis pro
 
 ![Python](https://img.shields.io/badge/python-3.10+-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
-![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)
+![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)
 
 ## 🌟 Key Features
 
@@ -51,7 +51,7 @@ A powerful, voice-enabled AI assistant for Windows built with Python. Jarvis pro
 
 ## 📋 Prerequisites
 
-- **Operating System**: Windows 10/11
+- **Operating System**: Windows 10/11, macOS 12+, or modern Linux (Ubuntu 20.04+/Debian 11+ tested)
 - **Python**: 3.10 or higher
 - **Internet Connection**: Required for online features (Gemini API, TTS, weather, news)
 
@@ -66,13 +66,16 @@ cd JARVIS-Autonomous-AI-Assistant
 
 ### 2. Install Dependencies
 
-Run the provided installation script:
+Use the installer. It prefers `Requirements/requirements.txt` and falls back to `requirements.txt`. It attempts bulk install and gracefully retries per package with guidance if needed.
 
 ```bash
 python install_requirements.py
 ```
 
-**Note**: Some packages may require manual installation check code if needed.
+Tips for native deps:
+- Windows: Install Microsoft C++ Build Tools when prompted.
+- macOS: `brew install portaudio` (for PyAudio)
+- Linux: `sudo apt install -y portaudio19-dev playerctl libsdl2-dev`
 
 ### 3. Configure Environment Variables
 
@@ -190,6 +193,38 @@ Upon launch, you'll be prompted to enter your password (3 attempts allowed). The
 "close chrome"
 "type Hello World"
 ```
+
+## 🖥️ Cross‑Platform Notes
+
+- Audio
+  - Online TTS saves a temporary MP3 and plays it; files are written to the system temp directory with unique names and safely cleaned up.
+  - Offline fallback uses `pyttsx3`.
+  - Microphone input requires `PyAudio`.
+- macOS
+  - Some controls use AppleScript (Music play/pause, start screensaver for lock).
+- Linux
+  - Media control uses `playerctl` when installed.
+  - Brightness tries `brightnessctl` or `xbacklight`.
+  - For pygame audio, ensure SDL deps (`libsdl2-dev`).
+- Windows
+  - Lock screen uses `rundll32 user32.dll,LockWorkStation`.
+  - Controlled Folder Access may block file I/O; use a normal writable folder.
+
+## 🔧 Installer Behavior
+
+- Prefers `Requirements/requirements.txt`; falls back to `requirements.txt`.
+- Tries bulk install, then line‑by‑line with retries and OS‑specific hints.
+- Runs `pip check` at the end to surface dependency conflicts.
+
+## 🔧 Troubleshooting
+
+- Permission denied when saving `*.mp3` during TTS
+  - Cause: unwritable directory or file lock. Fix: now writes to temp directory with unique names and retries deletion.
+- PyAudio install fails
+  - macOS: `brew install portaudio` then `pip install PyAudio`.
+  - Linux: `sudo apt install portaudio19-dev` then `pip install PyAudio`.
+- Linux media/brightness controls do nothing
+  - Install `playerctl`, `brightnessctl` or `xbacklight` as applicable.
 
 ## 🛠️ Architecture
 

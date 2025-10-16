@@ -1,13 +1,12 @@
 import os
 import pyttsx3
-os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "hide"
 import warnings
 warnings.filterwarnings("ignore", message="pkg_resources is deprecated as an API")
-os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "hide"
-import pygame
 import requests
 import threading
 from typing import Union, Optional
+import tempfile
+import uuid
 from .system_control import is_connected
 
 # Import interrupt handler
@@ -48,31 +47,42 @@ def play_audio_with_pygame(filepath: str) -> None:
     try:
         from .interrupt_handler import tts_interrupt_event
     except ImportError:
-        import threading
-        tts_interrupt_event = threading.Event()
-    
+        import threading as _threading
+        tts_interrupt_event = _threading.Event()
+
+    # Lazy import pygame and fall back to playsound if unavailable
     try:
+        os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "hide"
+        import pygame  # type: ignore
         pygame.mixer.init()
         pygame.mixer.music.load(filepath)
         pygame.mixer.music.play()
 
-        # Check for interruption every 100ms
         clock = pygame.time.Clock()
         while pygame.mixer.music.get_busy():
             if tts_interrupt_event.is_set():
                 pygame.mixer.music.stop()
                 break
-            clock.tick(10)  # Check 10 times per second
-            
-    except pygame.error as e:
-        print(f"Error playing audio with pygame: {e}")
+            clock.tick(10)
     except Exception as e:
-        print(f"Unexpected error during audio playback: {e}")
+        try:
+            from playsound import playsound  # type: ignore
+            # playsound is blocking; check interrupt only before starting
+            if not tts_interrupt_event.is_set():
+                playsound(filepath)
+        except Exception as e2:
+            print(f"Audio playback failed (pygame error: {e}) and playsound fallback failed: {e2}")
     finally:
         try:
-            pygame.mixer.quit()
-        except Exception as e:
-            print(f"Error quitting pygame mixer: {e}")
+            # If pygame was imported, try to quit mixer
+            if 'pygame' in globals():
+                import pygame as _pg
+                try:
+                    _pg.mixer.quit()
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
 def speak_audio(message: str, voice: str = "Matthew", folder: Optional[str] = None, extension: str = ".mp3") -> Union[None, str]:
     """
@@ -84,13 +94,15 @@ def speak_audio(message: str, voice: str = "Matthew", folder: Optional[str] = No
     :param extension: Extension for the audio file. Defaults to '.mp3'.
     :return: Path of the saved audio file or None if an error occurs.
     """
-    folder = folder or ""
+    # Use a writable temp directory and unique filename to avoid permission and collision issues
+    folder = folder or tempfile.gettempdir()
     try:
         audio_content = generate_audio(message, voice)
         if audio_content is None:
             return None
 
-        file_path = os.path.join(folder, f"{voice}{extension}")
+        safe_name = f"jarvis_tts_{voice}_{uuid.uuid4().hex}{extension}"
+        file_path = os.path.join(folder, safe_name)
         with open(file_path, "wb") as file:
             file.write(audio_content)
 
@@ -100,7 +112,17 @@ def speak_audio(message: str, voice: str = "Matthew", folder: Optional[str] = No
         except Exception as e:
             print(f"Error playing sound file '{file_path}': {e}")
 
-        os.remove(file_path)
+        # Ensure playback has fully stopped before deletion; retry on PermissionError
+        for attempt in range(3):
+            try:
+                os.remove(file_path)
+                break
+            except PermissionError:
+                # Give mixer time to release the file handle
+                import time as _time
+                _time.sleep(0.15)
+            except FileNotFoundError:
+                break
         return file_path
     except Exception as e:
         print(f"Error in speak_audio function: {e}")
