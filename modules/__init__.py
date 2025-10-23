@@ -13,8 +13,5 @@ WORD_TO_OPERATOR = {
     '÷': '/'
 }
 
-# Initialize an empty conversation history
-conversation_history = []
-
 # List to store reminders
 reminders = []

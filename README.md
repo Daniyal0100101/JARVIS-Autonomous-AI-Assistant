@@ -1,6 +1,6 @@
 # Jarvis AI Assistant
 
-A powerful, voice-enabled AI assistant for Windows built with Python. Jarvis provides an interactive command-line interface with rich visual feedback, combining voice and text input with advanced system control and AI-powered features.
+Jarvis is an advanced, cross-platform AI assistant for Windows and Mac, built with Python. It delivers a seamless voice and text-driven experience in a feature-rich command-line interface, offering intelligent system control, automation, and AI-powered tools—all enhanced by interactive visual feedback.
 
 ![Python](https://img.shields.io/badge/python-3.10+-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
@@ -356,7 +356,7 @@ For issues, questions, or suggestions:
 ## 🗺️ Roadmap
 
 - [ ] Multi-language support
-- [ ] Cross-platform compatibility (macOS, Linux)
+- [x] Cross-platform compatibility (macOS, Linux)
 - [ ] Web interface with React frontend
 - [ ] Voice customization options
 - [ ] Plugin system for extensibility

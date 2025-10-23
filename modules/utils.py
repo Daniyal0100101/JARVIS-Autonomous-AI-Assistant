@@ -32,12 +32,23 @@ from .image_analysis import analyze_image  # noqa: F401
 from .hand_gesture_detector import HandGestureDetector  # noqa: F401
 from .image_generator import generate_image  # noqa: F401
 from .apps_automation import send_whatsapp_message, send_email  # noqa: F401
-from modules import reminders, conversation_history, NOTE_FILE_PATH
+from modules import reminders, NOTE_FILE_PATH
 
 # Load environment variables from .env file
 load_dotenv()
 
+# Global persistent conversation history
+GLOBAL_CONVERSATION_HISTORY = []
+GLOBAL_PIPELINE_INSTANCE = None
 
+def clear_conversation_history():
+    """Clear the global conversation history."""
+    global GLOBAL_CONVERSATION_HISTORY
+    GLOBAL_CONVERSATION_HISTORY = []
+
+def get_conversation_history():
+    """Get the current conversation history."""
+    return GLOBAL_CONVERSATION_HISTORY.copy()
 
 class ToolExecutionPipeline:
     """tool execution pipeline with iterative processing capabilities."""
@@ -226,6 +237,10 @@ class ToolExecutionPipeline:
 
             # parse the call and only accept literal args (prevents arbitrary code)
             func_name, args, kwargs = self._parse_tool_call(code)
+            print(f"[TOOL CALL] {func_name}(" +
+                  ", ".join([repr(a) for a in args] +
+                            [f"{k}={repr(v)}" for k, v in kwargs.items()]) +
+                  ")")
 
             # get callable
             func = self._prebound_scope.get(func_name) or globals().get(func_name)
@@ -298,76 +313,119 @@ class ToolExecutionPipeline:
         """Query handler with iterative tool processing pipeline."""
         if not query:
             return "Please provide a query."
-        current_conversation = []
+        
         try:
             # create or reuse cached system prompt (rebuild every 5 minutes)
             if not self._cached_prompt or (time.time() - self._prompt_time > 300):
                 self._cached_prompt = self.create_system_prompt()
                 self._prompt_time = time.time()
 
-            current_conversation = [
-                {"role": "system", "content": self._cached_prompt},
-                {"role": "user", "content": query}
-            ]
+            # Use persistent global conversation history
+            global GLOBAL_CONVERSATION_HISTORY
+            
+            # Initialize conversation with system prompt if empty
+            if not GLOBAL_CONVERSATION_HISTORY:
+                GLOBAL_CONVERSATION_HISTORY = [{"role": "system", "content": self._cached_prompt}]
+            elif GLOBAL_CONVERSATION_HISTORY[0]["role"] != "system":
+                # Ensure system prompt is first
+                GLOBAL_CONVERSATION_HISTORY.insert(0, {"role": "system", "content": self._cached_prompt})
+            elif GLOBAL_CONVERSATION_HISTORY[0]["content"] != self._cached_prompt:
+                # Update system prompt if it changed
+                GLOBAL_CONVERSATION_HISTORY[0]["content"] = self._cached_prompt
+            
+            # Add current user query to persistent history
+            GLOBAL_CONVERSATION_HISTORY.append({"role": "user", "content": query})
+            
+            # Use the persistent conversation history
+            conversation = GLOBAL_CONVERSATION_HISTORY.copy()
 
             tool_cycle_count = 0
             final_response = None
+            
             while tool_cycle_count < self.max_tool_cycles:
-                ai_response = get_response(current_conversation, online=online)
+                # Pass the actual conversation list
+                ai_response = get_response(conversation, online=online)
+                
+                # Handle empty/failed responses
                 if not ai_response:
-                    # Gather only the last user message and all following system/tool results
-                    last_user = next((m for m in reversed(current_conversation) if m['role'] == 'user'), None)
-                    if last_user:
-                        user_idx = current_conversation.index(last_user)
-                        minimal_context = [last_user] + [
-                            m for m in current_conversation[user_idx + 1:] if m['role'] == 'system'
-                        ]
-                    else:
-                        minimal_context = []
-
-                    # Add a prompt to encourage the model to use just these
-                    minimal_context.append({"role": "user", "content": "Please answer based only on the above tool results and my question."})
+                    print(f"Warning: Empty response at cycle {tool_cycle_count}")
+                    
+                    # Build a recovery prompt with context
+                    recovery_prompt = (
+                        "The previous request failed to generate a response. "
+                        "Please provide a clear answer based on the available context and tool results."
+                    )
+                    conversation.append({"role": "user", "content": recovery_prompt})
+                    
                     time.sleep(1)
-                    ai_response = get_response(minimal_context, online=online) or "I'm sorry, I couldn't generate a response."
-                    break
-
+                    ai_response = get_response(conversation, online=online)
+                    
+                    if not ai_response:
+                        return "I apologize, but I'm having trouble generating a response. Please try rephrasing your question."
+                
+                # Add assistant response to conversation and global history
+                conversation.append({"role": "assistant", "content": ai_response})
+                GLOBAL_CONVERSATION_HISTORY.append({"role": "assistant", "content": ai_response})
+                
+                # Process tool calls
                 tool_results, has_errors = self.process_tool_cycle(ai_response)
-                current_conversation.append({"role": "assistant", "content": ai_response})
-
+                
+                # If no tools were called, this is the final response
                 if not tool_results:
                     final_response = ai_response
                     break
-
+                
+                # Add tool results as SYSTEM messages to both conversation and global history
                 for result in tool_results:
-                    
-                    # Use structured system messages so LLM sees [TOOL-SUCCESS]/[TOOL-ERROR] affordances
                     if result['success']:
-                        system_msg = f"[TOOL-SUCCESS] {result['code']} -> {repr(result['result'])} (t={result['execution_time']:.3f}s)"
+                        system_msg = (
+                            f"[TOOL-SUCCESS] {result['code']}\n"
+                            f"Result: {repr(result['result'])}\n"
+                            f"Execution time: {result['execution_time']:.3f}s"
+                        )
                     else:
-                        system_msg = f"[TOOL-ERROR] {result['code']} -> {result['error']}"
-                    current_conversation.append({"role": "system", "content": system_msg})
-
+                        system_msg = (
+                            f"[TOOL-ERROR] {result['code']}\n"
+                            f"Error: {result['error']}"
+                        )
+                    conversation.append({"role": "system", "content": system_msg})
+                    GLOBAL_CONVERSATION_HISTORY.append({"role": "system", "content": system_msg})
+                
                 tool_cycle_count += 1
-
-                # Reduce context size to last N turns to limit token usage (preserve recent system/tool outputs + user)
-                # Keep at most last 8 messages (configurable if needed)
-                if len(current_conversation) > 8:
-                    current_conversation = current_conversation[-8:]
-
+                
+                # Context window management: Keep last 20 messages in global history
+                if len(GLOBAL_CONVERSATION_HISTORY) > 20:
+                    # Always preserve: system prompt (index 0) + last 19 messages
+                    GLOBAL_CONVERSATION_HISTORY = [GLOBAL_CONVERSATION_HISTORY[0]] + GLOBAL_CONVERSATION_HISTORY[-19:]
+                
+                # Handle max cycles reached
                 if tool_cycle_count >= self.max_tool_cycles:
-                    final_response = get_response(current_conversation, online=online)
+                    # Try to get a final response
+                    conversation.append({
+                        "role": "user",
+                        "content": "Please provide a final answer based on the tool results above."
+                    })
+                    final_response = get_response(conversation, online=online)
+                    
                     if final_response and self.extract_tool_calls(final_response):
-                        final_response = "I've completed the available tool operations. " + \
-                                        re.sub(r'```tool_code.*?```', '', final_response, flags=re.DOTALL).strip()
+                        # Strip out any remaining tool calls
+                        final_response = re.sub(
+                            r'```tool_code.*?```', '', 
+                            final_response, 
+                            flags=re.DOTALL
+                        ).strip()
+                        final_response = (
+                            "I've completed the available tool operations. " + final_response
+                        )
                     break
 
-            self.conversation_history.extend(current_conversation)
             return final_response or "I apologize, but I couldn't complete the request."
 
         except Exception as e:
-            error_msg = f"An error occurred while processing your query: {str(e)}"
-            # keep original behavior of printing error
+            error_msg = f"Pipeline error: {str(e)}"
             print(error_msg)
+            import traceback
+            traceback.print_exc()
             return error_msg
 
     # ---------------------------
@@ -530,7 +588,12 @@ def handle_query(query: str, online: bool = False):
     if interrupt_handler:
         tts_interrupt_event.clear()
 
-    pipeline = ToolExecutionPipeline(max_tool_cycles=5, max_tools_per_cycle=3)
+    # Use global persistent pipeline instance
+    global GLOBAL_PIPELINE_INSTANCE
+    if GLOBAL_PIPELINE_INSTANCE is None:
+        GLOBAL_PIPELINE_INSTANCE = ToolExecutionPipeline(max_tool_cycles=5, max_tools_per_cycle=3)
+    
+    pipeline = GLOBAL_PIPELINE_INSTANCE
     final_response = pipeline.handle_query_with_iterative_tools(query, online)
 
     if final_response:
@@ -1336,25 +1399,16 @@ def handle_gesture_control():
     except Exception as e:
         return f"Error activating gesture control: {e}"
 
-def add_message(role, content):
-    """Add a message to the conversation history."""
-    conversation_history.append({'role': role, 'content': content})
-
-def get_response(user_message, model_name='gemma3', online=False,
+def get_response(conversation_messages, model_name='gemma3', online=False,
                  gemini_api_key=None, gemini_model="gemini-2.5-flash"):
-    """Get the response from the AI assistant while maintaining conversational history."""
+    """Get the response from the AI assistant using provided conversation messages."""
     import google.genai as genai
     from google.genai import types
     import google.api_core.exceptions
 
-    # Step 1: Add user message into conversation history
-    if isinstance(user_message, str):
-        new_message = {'role': 'user', 'content': user_message}
-        conversation_history.append(new_message)
-    elif isinstance(user_message, list):
-        conversation_history.extend(user_message)
-    else:
-        return "Invalid message format."
+    # Validate input
+    if not isinstance(conversation_messages, list):
+        return "Invalid message format. Expected list of messages."
 
     try:
         if online:
@@ -1365,27 +1419,43 @@ def get_response(user_message, model_name='gemma3', online=False,
 
             client = genai.Client(api_key=gemini_api_key)
 
-            # Step 2: Extract and concatenate all system contents (initial prompt + tool results)
-            system_contents = [msg['content'] for msg in conversation_history if msg['role'] == 'system']
-            system_instruction = "\n\n".join(system_contents) if system_contents else None
+            # Extract ONLY the initial system prompt (first system message)
+            initial_system_prompt = None
+            for msg in conversation_messages:
+                if msg['role'] == 'system':
+                    initial_system_prompt = msg['content']
+                    break  # Only take the FIRST system message
 
-            # Step 3: Filter to only user and assistant messages for contents
-            filtered_history = [msg for msg in conversation_history if msg['role'] in ['user', 'assistant']]
-
-            # Step 4: Map roles and create typed contents
+            # Build conversation with tool results as USER messages
             gemini_contents = []
-            for msg in filtered_history:
-                role = "user" if msg['role'] == 'user' else "model"
-                gemini_contents.append(
-                    types.Content(role=role, parts=[types.Part(text=msg['content'])])
-                )
+            for msg in conversation_messages:
+                # Skip the initial system message (already in system_instruction)
+                if msg['role'] == 'system' and msg['content'] == initial_system_prompt:
+                    continue
+                
+                # Convert system messages (tool results) to user messages
+                if msg['role'] == 'system':
+                    gemini_contents.append(
+                        types.Content(
+                            role="user",
+                            parts=[types.Part(text=f"TOOL EXECUTION RESULT:\n{msg['content']}")]
+                        )
+                    )
+                elif msg['role'] == 'user':
+                    gemini_contents.append(
+                        types.Content(role="user", parts=[types.Part(text=msg['content'])])
+                    )
+                elif msg['role'] == 'assistant':
+                    gemini_contents.append(
+                        types.Content(role="model", parts=[types.Part(text=msg['content'])])
+                    )
 
-            # Step 5: Prepare config with system_instruction if present
+            # Prepare config with system_instruction (persistent prompt only)
             config = types.GenerateContentConfig(
                 thinking_config=types.ThinkingConfig(thinking_budget=-1),
             )
-            if system_instruction:
-                config.system_instruction = system_instruction
+            if initial_system_prompt:
+                config.system_instruction = initial_system_prompt
 
             # Step 6: Implement retry logic for transient errors
             max_retries = 3
@@ -1398,6 +1468,16 @@ def get_response(user_message, model_name='gemma3', online=False,
                         config=config,
                     )
                     model_reply = response.text or ""
+                    
+                    # Handle empty responses explicitly
+                    if not model_reply or not model_reply.strip():
+                        print(f"Warning: Empty response from model (attempt {attempt + 1})")
+                        if attempt < max_retries - 1:
+                            time.sleep(1)
+                            continue
+                        else:
+                            return ""  # Explicitly return empty
+                    
                     break  # Success, exit retry loop
                 except google.api_core.exceptions.ServiceUnavailable as e:
                     if attempt < max_retries - 1:
@@ -1413,17 +1493,17 @@ def get_response(user_message, model_name='gemma3', online=False,
             import ollama
             response = ollama.chat(
                 model=model_name,
-                messages=conversation_history
+                messages=conversation_messages
             )
             model_reply = response.get('message', {}).get('content', '')
 
-        # Step 7: Append assistant reply to history
-        conversation_history.append({'role': 'assistant', 'content': model_reply})
         return model_reply.strip()
 
     except google.api_core.exceptions.ServiceUnavailable:
         print("All retries failed due to model overload.")
-        return "The AI service is currently overloaded. Please try again later."
+        return ""
     except Exception as e:
-        print(f"An error occurred: {e}")
-        return "Sorry, something went wrong."
+        print(f"Error in get_response: {e}")
+        import traceback
+        traceback.print_exc()
+        return ""
