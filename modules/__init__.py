@@ -13,5 +13,8 @@ WORD_TO_OPERATOR = {
     '÷': '/'
 }
 
+# store the conversation history in a list
+conversation_history = []
+
 # List to store reminders
 reminders = []

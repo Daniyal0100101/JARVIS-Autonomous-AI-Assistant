@@ -32,7 +32,7 @@ from .image_analysis import analyze_image  # noqa: F401
 from .hand_gesture_detector import HandGestureDetector  # noqa: F401
 from .image_generator import generate_image  # noqa: F401
 from .apps_automation import send_whatsapp_message, send_email  # noqa: F401
-from modules import reminders, NOTE_FILE_PATH
+from modules import reminders, conversation_history, NOTE_FILE_PATH
 
 # Load environment variables from .env file
 load_dotenv()
@@ -336,8 +336,8 @@ class ToolExecutionPipeline:
             # Add current user query to persistent history
             GLOBAL_CONVERSATION_HISTORY.append({"role": "user", "content": query})
             
-            # Use the persistent conversation history
-            conversation = GLOBAL_CONVERSATION_HISTORY.copy()
+            # use the persistent conversation history
+            conversation = GLOBAL_CONVERSATION_HISTORY
 
             tool_cycle_count = 0
             final_response = None
@@ -363,9 +363,8 @@ class ToolExecutionPipeline:
                     if not ai_response:
                         return "I apologize, but I'm having trouble generating a response. Please try rephrasing your question."
                 
-                # Add assistant response to conversation and global history
+                # Add assistant response (conversation is the global history)
                 conversation.append({"role": "assistant", "content": ai_response})
-                GLOBAL_CONVERSATION_HISTORY.append({"role": "assistant", "content": ai_response})
                 
                 # Process tool calls
                 tool_results, has_errors = self.process_tool_cycle(ai_response)
@@ -389,7 +388,6 @@ class ToolExecutionPipeline:
                             f"Error: {result['error']}"
                         )
                     conversation.append({"role": "system", "content": system_msg})
-                    GLOBAL_CONVERSATION_HISTORY.append({"role": "system", "content": system_msg})
                 
                 tool_cycle_count += 1
                 
@@ -1409,6 +1407,11 @@ def get_response(conversation_messages, model_name='gemma3', online=False,
     # Validate input
     if not isinstance(conversation_messages, list):
         return "Invalid message format. Expected list of messages."
+    
+    # CRITICAL FIX: Update the global conversation_history to stay in sync
+    global conversation_history
+    conversation_history.clear()
+    conversation_history.extend(conversation_messages)
 
     try:
         if online:
@@ -1476,7 +1479,7 @@ def get_response(conversation_messages, model_name='gemma3', online=False,
                             time.sleep(1)
                             continue
                         else:
-                            return ""  # Explicitly return empty
+                            return "I apologize, but I couldn't generate a response. Please try rephrasing your request."
                     
                     break  # Success, exit retry loop
                 except google.api_core.exceptions.ServiceUnavailable as e:
@@ -1501,9 +1504,9 @@ def get_response(conversation_messages, model_name='gemma3', online=False,
 
     except google.api_core.exceptions.ServiceUnavailable:
         print("All retries failed due to model overload.")
-        return ""
+        return "The AI service is currently overloaded. Please try again later."
     except Exception as e:
         print(f"Error in get_response: {e}")
         import traceback
         traceback.print_exc()
-        return ""
+        return "Sorry, something went wrong while processing your request."
