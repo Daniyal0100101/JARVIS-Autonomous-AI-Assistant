@@ -1,3 +1,10 @@
+"""Entry point for the Jarvis AI Assistant.
+
+This module wires together authentication, connection checks, the voice/text
+interaction loop, and a modern terminal UI using Rich. It delegates concrete
+actions to modules under `modules/` to keep concerns separated.
+"""
+
 import random
 import time
 import hashlib
@@ -22,11 +29,11 @@ console = Console()
 # Disable all logging in the application
 logging.disable(logging.CRITICAL)
 
-# Hash the imported password 
+# Hash the imported password (avoid storing plain text in memory longer than needed)
 STORED_PASSWORD_HASH = hashlib.sha256(PASSWORD.password.encode()).hexdigest()
 
 def authenticate_user(attempts: int = 3):  # Allow three attempts
-    """Authenticates the user by verifying the password."""
+    """Prompt for a password and check against the stored hash."""
     console.print(Panel.fit("[bold cyan]Authentication Required[/bold cyan]", style="bold blue", box=box.ROUNDED))
     for _ in range(attempts):
         try:
@@ -48,11 +55,11 @@ def authenticate_user(attempts: int = 3):  # Allow three attempts
     return False
 
 def verify_password(password):
-    """Verifies the entered password against the stored hash."""
+    """Verify an entered password against the stored hash."""
     return hashlib.sha256(password.encode()).hexdigest() == STORED_PASSWORD_HASH
 
 def get_greeting(online):
-    """Generates a Jarvis-style greeting based on the online status."""
+    """Generate a Jarvis-style greeting based on connectivity."""
     base_greeting = f"{greet()}! Jarvis at your service."
     online_greetings = [
         "All systems are green.",
@@ -70,7 +77,7 @@ def get_greeting(online):
     return f"{base_greeting} {online_status} {availability}"
 
 def switch_mode(query, current_mode, online):
-    """Switches between voice and text mode based on user query."""
+    """Switch between voice and text modes based on user request."""
     mode = query.lower().split("switch to ")[-1].strip()
 
     if mode == "voice mode":
@@ -112,7 +119,7 @@ def switch_mode(query, current_mode, online):
     return current_mode
 
 def get_farewell_message():
-    """Generates a Jarvis-style farewell message."""
+    """Generate a Jarvis-style farewell message."""
     farewell_messages = [
         "System shutdown initiated.",
         "Logging off.",
@@ -123,7 +130,7 @@ def get_farewell_message():
     return f"{random.choice(farewell_messages)} {awaiting}"
 
 def handle_query_input(query, mode, online):
-    """Processes the user's query and determines the mode or exit."""
+    """Process a query, possibly changing mode or exiting the loop."""
     query_lower = query.lower()
 
     if "switch to" in query_lower:
@@ -139,7 +146,7 @@ def handle_query_input(query, mode, online):
     return mode
 
 def main():
-    """Main function that initializes the AI assistant and handles user interactions."""
+    """Initialize the assistant and run the interaction loop."""
     # --- Modern Rich Welcome Interface ---
     title_text = Text("JARVIS AI ASSISTANT", style="bold white on blue")
     title_panel = Panel(
@@ -156,9 +163,11 @@ def main():
     console.print(Align.center(subtitle_text))
     console.print("\n")
 
+    # Authenticate before enabling any capabilities
     if not authenticate_user():
         return  # Exit if authentication fails
 
+    # Determine if online services can be used
     online = is_connected()
     
     # Initialize interrupt handler silently
@@ -184,7 +193,8 @@ def main():
     console.print(separator)
     speak(greeting)
 
-    mode = 'text' if not online else 'voice'  # Just to start in text mode
+    # Start in voice mode if online, otherwise fall back to text mode
+    mode = 'voice' if online else 'text'
 
     try:
         while True:

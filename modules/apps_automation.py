@@ -1,10 +1,14 @@
+"""Small helpers for messaging and email automation."""
+
 def send_whatsapp_message(recipient_name, message):
-    """
-    Sends a WhatsApp message using pywhatkit, handling the import dynamically.
-    
-    :param recipient: The phone number to send the message to (string format with country code).
-    :param message: The content of the message to send.
-    :return: Success or error message as a string.
+    """Send a WhatsApp message via pywhatkit to a contact in modules/contacts.py.
+
+    Parameters:
+    - recipient_name: Key in `modules/contacts.contacts` mapping to a phone number.
+    - message: The content to send.
+
+    Returns:
+    - A human-friendly status string.
     """
     try:
         import pywhatkit as kit
@@ -26,7 +30,7 @@ def send_whatsapp_message(recipient_name, message):
         return f"Failed to send the message: {e}"
 
 def send_email(subject, body, to_email):
-    """Send an email with the specified subject, body, and recipient."""
+    """Send a simple plaintext email using SMTP credentials from environment."""
     import smtplib
     from email.mime.text import MIMEText
     from email.mime.multipart import MIMEMultipart

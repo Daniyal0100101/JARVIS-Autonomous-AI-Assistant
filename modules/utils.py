@@ -1,3 +1,10 @@
+"""High-level utilities and the tool execution pipeline.
+
+This module contains helper functions for information retrieval, file/system
+automation, and the `ToolExecutionPipeline` which parses, validates, and
+executes allowlisted function calls emitted by the LLM (as tool_code blocks).
+"""
+
 import os
 import re
 import time
@@ -42,16 +49,25 @@ GLOBAL_CONVERSATION_HISTORY = []
 GLOBAL_PIPELINE_INSTANCE = None
 
 def clear_conversation_history():
-    """Clear the global conversation history."""
+    """Clear the global conversation history.
+
+    Resets the in-memory list used to accumulate assistant/user messages.
+    Use this before starting a fresh conversational session.
+    """
     global GLOBAL_CONVERSATION_HISTORY
     GLOBAL_CONVERSATION_HISTORY = []
 
 def get_conversation_history():
-    """Get the current conversation history."""
+    """Return a shallow copy of the global conversation history list."""
     return GLOBAL_CONVERSATION_HISTORY.copy()
 
 class ToolExecutionPipeline:
-    """tool execution pipeline with iterative processing capabilities."""
+    """Iterative tool execution pipeline with validation and caching.
+
+    Parses `tool_code` blocks, validates them via AST and an allowlist, then
+    executes in a constrained scope. Supports multiple cycles with limited
+    tools per cycle and caches common results to improve responsiveness.
+    """
 
     def __init__(self, max_tool_cycles=5, max_tools_per_cycle=3):
         self.max_tool_cycles = max_tool_cycles
@@ -123,7 +139,7 @@ class ToolExecutionPipeline:
     # Extraction
     # ---------------------------
     def extract_tool_calls(self, text: str) -> List[str]:
-        """Extract all tool calls from the text using the compiled regex."""
+        """Extract `tool_code` blocks from model output using a compiled regex."""
         if not text or "tool_code" not in text:
             return []
         matches = self._tool_pattern.findall(text)
@@ -133,7 +149,11 @@ class ToolExecutionPipeline:
     # Validation (cached)
     # ---------------------------
     def validate_tool_call(self, code: str) -> Tuple[bool, str]:
-        """Validate a tool call for security and syntax, using a small cache."""
+        """Validate a tool call for security and syntax, with caching.
+
+        Enforces that the code is a single Call expression with only literal
+        arguments, and the function name is present in the allowlist.
+        """
         if code in self._validation_cache:
             return self._validation_cache[code]
 
@@ -166,9 +186,10 @@ class ToolExecutionPipeline:
     # Parsing helper (cached)
     # ---------------------------
     def _parse_tool_call(self, code: str) -> Tuple[str, List[Any], Dict[str, Any]]:
-        """
-        Parse a single tool call expression returning (func_name, args_list, kwargs_dict)
-        Accepts only a single expression which must be a Call with simple literal arguments.
+        """Parse a single tool call into `(name, args, kwargs)`.
+
+        Accepts one expression that must be an AST Call node. Positional and
+        keyword arguments must be literals (no names/attributes/complex exprs).
         """
         if code in self._parse_cache:
             return self._parse_cache[code]
@@ -219,7 +240,11 @@ class ToolExecutionPipeline:
     # Execution
     # ---------------------------
     def execute_tool_call(self, code: str) -> Dict[str, Any]:
-        """Execute a single tool call with comprehensive error handling."""
+        """Execute a validated tool call and return a structured result.
+
+        Initializes a constrained scope lazily, measures execution time, and
+        records a log entry with success, result, or error details.
+        """
         execution_start = time.time()
         try:
             # ensure prebound scope exists (lazy)
@@ -280,7 +305,7 @@ class ToolExecutionPipeline:
     # Cycle processing
     # ---------------------------
     def process_tool_cycle(self, ai_response: str) -> Tuple[List[Dict], bool]:
-        """Process a single cycle of tool execution."""
+        """Process one cycle: extract, validate, and execute tool calls."""
         tool_calls = self.extract_tool_calls(ai_response)
         if not tool_calls:
             return [], False
@@ -310,7 +335,7 @@ class ToolExecutionPipeline:
     # Query handler (iterative with compact context)
     # ---------------------------
     def handle_query_with_iterative_tools(self, query: str, online: bool = False) -> str:
-        """Query handler with iterative tool processing pipeline."""
+        """Handle a query using iterative tool execution and summarization."""
         if not query:
             return "Please provide a query."
         
@@ -430,7 +455,7 @@ class ToolExecutionPipeline:
     # System prompt (cached/light)
     # ---------------------------
     def create_system_prompt(self) -> str:
-        """Create system prompt with better tool handling instructions."""
+        """Build the system prompt enumerating available tools and usage rules."""
         # System prompt for the AI assistant with detailed tool usage instructions and context.
         available_tools = []
         for tool_name in self.allowed_tools:
@@ -511,7 +536,7 @@ class ToolExecutionPipeline:
     # Stats
     # ---------------------------
     def get_execution_stats(self) -> Dict[str, Any]:
-        """Get statistics about tool execution."""
+        """Return aggregated stats for executed tools (success/failed counts)."""
         if not self.tool_execution_log:
             return {"total_executions": 0}
         successful = sum(1 for log in self.tool_execution_log if log['success'])
@@ -526,7 +551,7 @@ class ToolExecutionPipeline:
         }
 
 def greet() -> str:
-    """Generate a time-based greeting."""
+    """Generate a time-based greeting based on local time."""
     current_hour = datetime.now().hour
     if 5 <= current_hour < 12:
         return "Good morning"
@@ -561,7 +586,11 @@ def write(*args, word_speed=0.5):
     print()
 
 def handle_query(query: str, online: bool = False):
-    """Handle the user's query and provide the appropriate response."""
+    """Route a natural-language query to the appropriate function or tool.
+
+    Detects built-in commands, launches automation/system actions, and falls
+    back to the iterative tool pipeline when relevant.
+    """
     # Import interrupt handler
     try:
         from .interrupt_handler import (
@@ -784,15 +813,13 @@ def open_website(url: str) -> str:
 
 # Web search tool
 def search_web(query: str, num_results: int = 5):
-    """
-    Search the web using SerpApi (Google Search API).
-    Returns a list of search results (title, link, snippet).
+    """Search the web via SerpApi (Google) and return a list of results.
 
     Args:
-        query (str): The search query.
-        num_results (int): Number of results to return.
+        query: The search query.
+        num_results: Number of results to return.
     Returns:
-        list: A list of dictionaries with 'title', 'link', and 'snippet' keys.
+        list|str: A list of dicts with 'title', 'link', 'snippet' or an error string.
     """
 
     if not query:
@@ -829,14 +856,13 @@ def search_web(query: str, num_results: int = 5):
         return f"Error performing search: {e}"
 
 def get_news(rss_url="https://news.google.com/rss?hl=en-PK&gl=PK&ceid=PK:en", num_articles=1):
-    """
-    Fetch and summarize real-time news from an RSS feed.
+    """Fetch and summarize recent news articles from an RSS feed.
 
     Args:
-        rss_url (str): The URL of the RSS feed to fetch news from.
-        num_articles (int): The number of news articles to retrieve and summarize.
+        rss_url: RSS feed URL.
+        num_articles: Number of articles to summarize.
     Returns:
-        str: A summary of the latest news articles.
+        str: A formatted summary string with article titles and snippets.
     """
     try:
         feed = feedparser.parse(rss_url)
@@ -858,7 +884,7 @@ def get_news(rss_url="https://news.google.com/rss?hl=en-PK&gl=PK&ceid=PK:en", nu
         return f"An error occurred while fetching the news: {e}"
 
 def get_weather(city: str) -> str:
-    """Fetch real-time weather data for a specified city."""
+    """Fetch current weather data for a city using OpenWeatherMap."""
     try:
         api_key = os.getenv("OPENWEATHER_API_KEY")
         if not api_key:
@@ -906,7 +932,7 @@ def get_weather(city: str) -> str:
         return f"Error: {str(e)}"
 
 def get_wikipedia_summary(topic: str) -> str:
-    """Fetch and structure a Wikipedia article summary with metadata."""
+    """Fetch and structure a Wikipedia summary with metadata."""
     if not topic:
         return {
             "status": "error",
@@ -958,7 +984,7 @@ def get_wikipedia_summary(topic: str) -> str:
         }
 
 def get_system_info():
-    """Generate a detailed system report with error handling."""
+    """Generate a system report with CPU/memory/disk/battery info."""
     try:
         cpu_usage = psutil.cpu_percent(interval=1)
         memory = psutil.virtual_memory()
@@ -987,7 +1013,7 @@ def get_system_info():
         return f"Error gathering system information: {str(e)}"
 
 def get_current_city():
-    """Get the current city based on the IP address."""
+    """Return current city based on IP geolocation; None if unavailable."""
     try:
         response = requests.get('https://api.ipify.org?format=json', timeout=5)
         ip_address = response.json().get('ip')
@@ -1320,7 +1346,7 @@ def check_reminders() -> dict:
         }
 
 def save_to_file(note):
-    """Save the given note to a file."""
+    """Append a note to the default notes file with timestamp."""
     try:
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         with open(NOTE_FILE_PATH, 'a') as file:
@@ -1330,7 +1356,7 @@ def save_to_file(note):
         return f"Error saving note: {e}"
 
 def load_from_file():
-    """Load and return the notes from the file."""
+    """Return the content of the default notes file, or a friendly message."""
     try:
         if os.path.exists(NOTE_FILE_PATH):
             with open(NOTE_FILE_PATH, 'r') as file:
@@ -1342,7 +1368,7 @@ def load_from_file():
         return f"Error loading notes: {e}"
 
 def secure_eval(expression):
-    """Evaluate the given expression securely."""
+    """Safely evaluate a simple expression using a restricted AST evaluation."""
     expression = expression.strip()
     try:
         node = ast.parse(expression, mode='eval')
@@ -1354,7 +1380,7 @@ def secure_eval(expression):
         return f"An error occurred: {e}"
 
 def get_battery_status():
-    """Get detailed battery information."""
+    """Return detailed battery information or a desktop message."""
     try:
         battery = psutil.sensors_battery()
         if battery:
@@ -1374,7 +1400,7 @@ def get_battery_status():
         return f"Error getting battery status: {e}"
 
 def get_network_info():
-    """Get network connectivity information."""
+    """Return network connectivity status and IP/location when online."""
     try:
         if is_connected():
             response = requests.get('https://ipinfo.io', timeout=5).json()
@@ -1389,7 +1415,7 @@ def get_network_info():
         return f"Network connected but error getting details: {e}"
 
 def handle_gesture_control():
-    """Activate hand gesture control system."""
+    """Activate the hand gesture control system and return a status string."""
     try:
         detector = HandGestureDetector()
         detector.start_detection()

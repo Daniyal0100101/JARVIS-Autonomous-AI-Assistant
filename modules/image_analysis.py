@@ -1,3 +1,9 @@
+"""Image analysis via Google Gemini multimodal models.
+
+Provides a thin helper around google-genai to upload an image and optionally
+ask a targeted question, returning concise factual output.
+"""
+
 import base64
 import os
 import mimetypes

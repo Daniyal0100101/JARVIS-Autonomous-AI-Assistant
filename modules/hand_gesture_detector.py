@@ -1,3 +1,10 @@
+"""Hand gesture detection and simple mouse control.
+
+Uses MediaPipe Hands to detect gestures and translate them to mouse actions.
+Window is sized (not fullscreen) and shows simple overlays for detected
+actions. Press 'q' to quit the detection loop.
+"""
+
 import cv2
 import mediapipe as mp
 import pyautogui
@@ -24,24 +31,24 @@ class HandGestureDetector:
         self.RIGHT_CLICK_ANGLE = 90
 
     def get_angle(self, a, b, c):
-        """Calculate angle between three points."""
+        """Calculate the angle (degrees) formed by points a-b-c."""
         radians = np.arctan2(c[1] - b[1], c[0] - b[0]) - np.arctan2(a[1] - b[1], a[0] - b[0])
         angle = np.abs(np.degrees(radians))
         return angle
 
     def get_distance(self, point1, point2):
-        """Calculate distance between two points."""
+        """Calculate Euclidean distance between two points."""
         return np.linalg.norm(np.array(point1) - np.array(point2))
 
     def find_finger_tip(self, hand_landmarks):
-        """Find the tip of the index finger."""
+        """Find the (x, y) of the index finger tip in normalized coords."""
         if hand_landmarks:
             index_finger_tip = hand_landmarks.landmark[self.mp_hands.HandLandmark.INDEX_FINGER_TIP]
             return index_finger_tip.x, index_finger_tip.y
         return None, None
 
     def move_mouse(self, index_finger_tip):
-        """Move the mouse pointer based on the index finger tip position."""
+        """Move the mouse pointer according to the finger tip position."""
         if index_finger_tip:
             x, y = index_finger_tip
             x = int(x * self.screen_width)
@@ -49,11 +56,11 @@ class HandGestureDetector:
             pyautogui.moveTo(x, y)
 
     def play_sound(self, frequency=1000, duration=100):
-        """Play a sound to indicate a gesture."""
+        """Play a short beep to indicate a gesture trigger."""
         winsound.Beep(frequency, duration)
 
     def detect_gesture(self, frame, landmark_list, index_finger_tip):
-        """Detect gestures and perform corresponding actions."""
+        """Detect gestures from landmarks and perform actions."""
         if len(landmark_list) >= 21:
             thumb_index_dist = self.get_distance(landmark_list[4], landmark_list[8])
 

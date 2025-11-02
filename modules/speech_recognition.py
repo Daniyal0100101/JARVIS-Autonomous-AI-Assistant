@@ -1,3 +1,10 @@
+"""Speech recognition utilities combining SpeechRecognition + Faster-Whisper.
+
+Listens from microphone with animated status and transcribes using
+faster-whisper. Integrates with interrupt flags to avoid conflicts
+with keyboard-based TTS interruptions.
+"""
+
 import speech_recognition as sr
 from .text_to_speech import speak
 import time
@@ -17,7 +24,7 @@ except ImportError:
 # ---------------------------
 # Global Whisper model (loaded once)
 # ---------------------------
-WHISPER_MODEL_SIZE = "base" # change to "small", "medium", "large-v3" as needed
+WHISPER_MODEL_SIZE = "base"  # change to "small", "medium", "large-v3" as needed
 WHISPER_DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 # Load the Whisper model once
@@ -28,7 +35,7 @@ whisper_model = WhisperModel(
 )
 
 def animate_status(message, stop_event):
-    """Threaded animation for status updates."""
+    """Threaded spinner animation for status updates in console."""
     animation = "|/-\\"
     idx = 0
     while not stop_event.is_set():

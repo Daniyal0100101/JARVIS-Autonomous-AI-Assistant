@@ -1,3 +1,10 @@
+"""Image generation using api.airforce free endpoints.
+
+Provides a single entry `generate_image` that accepts a prompt and returns the
+saved filename or an error message. Handles both direct URL and base64 JSON
+responses from the backend.
+"""
+
 import os
 import base64
 import requests

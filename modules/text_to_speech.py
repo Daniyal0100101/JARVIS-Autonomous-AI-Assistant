@@ -1,3 +1,10 @@
+"""Text-to-speech utilities with online + offline backends.
+
+Primary flow:
+- If online, try StreamElements API and play via pygame with interrupt support.
+- If that fails or offline, fall back to local pyttsx3 engine.
+"""
+
 import os
 import pyttsx3
 import warnings

@@ -1,3 +1,9 @@
+"""Cross-platform system control helpers.
+
+Provides best-effort actions for lock screen, volume, media controls,
+brightness, screenshots, and basic connectivity checks.
+"""
+
 import socket
 import os
 import subprocess
@@ -5,7 +11,7 @@ import shlex
 import platform
 
 def is_connected():
-    """Check if the system is connected to the internet."""
+    """Return True if a simple TCP connection to a known host succeeds."""
     try:
         # Attempt to connect to a known website (Google)
         socket.create_connection(("www.google.com", 80))
