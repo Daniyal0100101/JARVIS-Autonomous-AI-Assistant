@@ -14,6 +14,7 @@ from modules.speech_recognition import listen, sr
 from modules.system_control import is_connected
 from modules.utils import greet, handle_query
 from modules import password as PASSWORD
+from modules.task_daemon import initialize_daemon, shutdown_daemon
 
 import logging
 
@@ -170,6 +171,10 @@ def main():
     # Determine if online services can be used
     online = is_connected()
     
+    # Initialize background daemon for autonomous reminders/tasks
+    daemon_callback_message = lambda data: speak(f"Reminder: {data.get('message', 'No message')}") if 'message' in data else None
+    initialize_daemon(speak_callback=daemon_callback_message)
+    
     # Initialize interrupt handler silently
     try:
         from modules.interrupt_handler import init_interrupt_handler, cleanup_interrupt_handler
@@ -243,7 +248,8 @@ def main():
                 speak(error_message)
     
     finally:
-        # Cleanup interrupt handler
+        # Cleanup daemon and interrupt handler
+        shutdown_daemon()
         if cleanup_interrupt_handler:
             cleanup_interrupt_handler()
 

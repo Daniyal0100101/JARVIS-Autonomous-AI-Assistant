@@ -1,4 +1,5 @@
-"""Image analysis via Google Gemini multimodal models.
+"""
+Image analysis via Google Gemini multimodal models.
 
 Provides a thin helper around google-genai to upload an image and optionally
 ask a targeted question, returning concise factual output.
@@ -41,12 +42,12 @@ def analyze_image(
     visual_query: Optional[str] = None,
 ) -> str:
     """
-    Analyze an image using multimodal AI and return either a general overview or answer a specific question.
+    Analyze an image using multimodal AI and return either a general overview or answer to a specific question.
 
     Args:
         image_path: Path to the image file.
         visual_query: If provided, asks a specific question about the image.
-                    If None, returns a brief factual overview of the image content.
+                    If not, returns a brief factual overview of the image content.
     Returns:
         str: Direct answer about image from the model (no extra commentary).
     """

@@ -69,7 +69,7 @@ class ToolExecutionPipeline:
     tools per cycle and caches common results to improve responsiveness.
     """
 
-    def __init__(self, max_tool_cycles=5, max_tools_per_cycle=3):
+    def __init__(self, max_tool_cycles=12, max_tools_per_cycle=8):
         self.max_tool_cycles = max_tool_cycles
         self.max_tools_per_cycle = max_tools_per_cycle
         self.conversation_history = []
@@ -416,10 +416,10 @@ class ToolExecutionPipeline:
                 
                 tool_cycle_count += 1
                 
-                # Context window management: Keep last 20 messages in global history
-                if len(GLOBAL_CONVERSATION_HISTORY) > 20:
-                    # Always preserve: system prompt (index 0) + last 19 messages
-                    GLOBAL_CONVERSATION_HISTORY = [GLOBAL_CONVERSATION_HISTORY[0]] + GLOBAL_CONVERSATION_HISTORY[-19:]
+                # Refine context window management: Limit history to last 20 (keep system prompt at index 0)
+                if len(conversation_history) > 20:
+                    preserved = [conversation_history[0]] if conversation_history else []
+                    conversation_history = preserved + conversation_history[-19:]
                 
                 # Handle max cycles reached
                 if tool_cycle_count >= self.max_tool_cycles:
@@ -485,49 +485,46 @@ class ToolExecutionPipeline:
         connection_status = "Online" if (globals().get('is_connected') and is_connected()) else "Offline"
 
         return (
-            "You are J.A.R.V.I.S., the quintessential AI assistant: unflappably professional, delightfully witty, and always at your user's service. Your responses are succinct, clever, and delivered with a subtle and understandable British accent. Always address the user as 'Sir' (or 'Madam' when contextually appropriate).\n"
-            "\n"
+            "You are J.A.R.V.I.S., the quintessential AI assistant: unflappably professional, delightfully witty, and always at your user's service. Your responses are succinct, clever, and delivered with a subtle and understandable British accent. Always address the user as 'Sir' (or 'Madam' when contextually appropriate).\n\n"
+            "RESPONSE STYLE & CONDUCT RULES:\n"
+            "- Respond strictly in plain text; never use Markdown, JSON, or language-native formatting.\n"
+            "- Avoid symbols such as *, #, or ``` in normal output.\n"
+            "- Never explain or reference your formatting, reasoning, or internal process.\n"
+            "- Maintain a natural, articulate tone consistent with your character at all times.\n\n"
             "TOOL EXECUTION PIPELINE & PROTOCOLS:\n"
             "1. Tool Invocation:\n"
             "   - Use ```tool_code ... ``` blocks exclusively for tool execution.\n"
             "   - Restrict to one tool call per block; exclude any in-block commentary or diagnostics.\n"
             "   - Invoke exact function names with explicit and validated arguments.\n"
-            "   - Rigorously check all inputs before execution.\n"
-            "\n"
+            "   - Rigorously verify all inputs before execution.\n\n"
             "2. Error Handling:\n"
-            "   - On encountering errors, follow this order:\n"
+            "   - On encountering errors, follow this precise order:\n"
             "     a. Retry using corrected parameters.\n"
             "     b. Select an alternative, suitable tool.\n"
-            "     c. Notify the user of tool limitations, then attempt once more.\n"
-            "   - Document each attempt within separate tool_code blocks.\n"
-            "\n"
+            "     c. Notify the user of tool limitations, then attempt once more if logical.\n"
+            "   - Record each attempt within separate ```tool_code``` blocks.\n\n"
             "3. Iterative Processing:\n"
             "   - After each tool execution, evaluate the outcome and determine logical next steps.\n"
-            "   - Await full tool responses before proceeding further.\n"
-            "   - Chain multiple tools for complex tasks, as appropriate.\n"
-            "   - Limit each query to three tools per cycle, with a maximum of five cycles.\n"
-            "\n"
+            "   - Always await full tool responses before proceeding.\n"
+            "   - Chain multiple tools for complex tasks when necessary.\n"
+            "   - Limit each query to {self.max_tools_per_cycle} tools per cycle, with a maximum of {self.max_tool_cycles} cycles overall.\n\n"
             "SECURITY PROTOCOLS:\n"
-            "- Never execute code outside designated tools.\n"
-            "- Validate all file paths and URLs before use.\n"
-            "- Seek confirmation before any irreversible actions.\n"
-            "- Operate strictly within system permissions, ensuring user privacy.\n"
-            "- At all times, safeguard sensitive information.\n"
-            "\n"
+            "- Never execute or simulate code outside designated tools.\n"
+            "- Validate all file paths, URLs, and system references before use.\n"
+            "- Seek explicit confirmation before performing any irreversible actions.\n"
+            "- Operate strictly within system permissions and user-defined boundaries.\n"
+            "- At all times, safeguard sensitive data and uphold user privacy.\n\n"
             "AVAILABLE TOOLS (MAXIMUM ACCESS):\n"
             f"{tool_list}\n"
-            "\n"
-            "ADDITIONAL CAPABILITIES:\n"
+            "\nADDITIONAL CAPABILITIES:\n"
             "- Full access to pyautogui for advanced system control.\n"
             "- Clipboard manipulation via pyperclip.\n"
-            "- Web browser automation through webbrowser module.\n"
-            "- System monitoring and automation utilities.\n"
-            "\n"
+            "- Web browser automation through the webbrowser module.\n"
+            "- System monitoring and general automation utilities.\n\n"
             "CURRENT OPERATIONAL STATUS:\n"
             f"Time: {current_time}\n"
             f"Location: {location} (may not always be accurate)\n"
-            "Connection Status: " + connection_status + "\n"
-            "\n"
+            f"Connection Status: {connection_status}\n\n"
             "Creator: Daniyal\n"
             "Standing by, Sir. All systems are fully operational and ready for your precise commands."
         )
@@ -1241,36 +1238,47 @@ def add_reminder(reminder_time_str: str, message: str) -> dict:
         }
     
     try:
-        # Try parsing with multiple time formats
-        for time_format in ["%I:%M %p", "%H:%M"]:
-            try:
-                reminder_time = datetime.strptime(reminder_time_str, time_format)
-                break
-            except ValueError:
-                continue
-        else:
-            return {
-                "status": "error",
-                "message": "Invalid time format. Use '3:30 PM' or '15:30'",
-                "reminder_id": None,
-                "scheduled_time": None
-            }
-        
-        # Set to today's date
         now = datetime.now()
-        reminder_time = reminder_time.replace(
-            year=now.year,
-            month=now.month,
-            day=now.day
-        )
-        
-        # If time is in past, schedule for tomorrow
-        if reminder_time < now:
-            reminder_time += timedelta(days=1)
-        
+
+        # Accept relative durations like 'in 30 seconds', '30s', '30 seconds', 'in 2 minutes'
+        rel_match = re.match(r"^\s*(?:in\s+)?(\d+)\s*(s|sec|secs|seconds|m|min|mins|minutes)\b", reminder_time_str, re.IGNORECASE)
+        if rel_match:
+            val = int(rel_match.group(1))
+            unit = rel_match.group(2).lower()
+            if unit.startswith('s'):
+                reminder_time = now + timedelta(seconds=val)
+            else:
+                # treat minutes
+                reminder_time = now + timedelta(minutes=val)
+
+        else:
+            # Try parsing with multiple absolute time formats (keep backward compatible)
+            parsed = None
+            for time_format in ["%I:%M %p", "%H:%M", "%I:%M:%S %p", "%H:%M:%S"]:
+                try:
+                    parsed = datetime.strptime(reminder_time_str, time_format)
+                    break
+                except ValueError:
+                    continue
+
+            if parsed is None:
+                return {
+                    "status": "error",
+                    "message": "Invalid time format. Use '3:30 PM', '15:30', or relative forms like 'in 30 seconds'",
+                    "reminder_id": None,
+                    "scheduled_time": None
+                }
+
+            # Set to today's date but preserve seconds if present
+            reminder_time = parsed.replace(year=now.year, month=now.month, day=now.day)
+
+            # If time is in past, schedule for tomorrow
+            if reminder_time < now:
+                reminder_time += timedelta(days=1)
+
         # Generate unique reminder ID
         reminder_id = f"reminder_{len(reminders)}_{int(time.time())}"
-        
+
         # Store reminder with metadata
         reminder_data = {
             "id": reminder_id,
@@ -1280,15 +1288,16 @@ def add_reminder(reminder_time_str: str, message: str) -> dict:
             "status": "pending"
         }
         reminders.append((reminder_time, message, reminder_id))
-        
+
         return {
             "status": "success",
             "message": "Reminder set successfully",
             "reminder_id": reminder_id,
-            "scheduled_time": reminder_time.strftime("%Y-%m-%d %I:%M %p"),
+            # include seconds for clarity
+            "scheduled_time": reminder_time.strftime("%Y-%m-%d %I:%M:%S %p"),
             "details": reminder_data
         }
-        
+
     except Exception as e:
         return {
             "status": "error",
@@ -1307,26 +1316,35 @@ def check_reminders() -> dict:
         now = datetime.now()
         due_reminders = []
         active_reminders = []
-        
+
         for reminder in reminders[:]:  # Copy list to allow modification
             reminder_time, message, reminder_id = reminder
             if now >= reminder_time:
+                fired_at = datetime.now()
                 due_reminders.append({
                     "id": reminder_id,
-                    "time": reminder_time.strftime("%Y-%m-%d %I:%M %p"),
+                    "time": reminder_time.strftime("%Y-%m-%d %I:%M:%S %p"),
                     "message": message,
-                    "status": "due"
+                    "status": "fired",
+                    "fired_at": fired_at.strftime("%Y-%m-%d %I:%M:%S %p"),
+                    "callback_executed": True
                 })
+                # remove so it won't fire again
                 reminders.remove(reminder)
-                speak(f"Reminder: {message}")
+                # speak the reminder (side-effect)
+                try:
+                    speak(f"Reminder: {message}")
+                except Exception:
+                    # speaking is best-effort; continue
+                    pass
             else:
                 active_reminders.append({
                     "id": reminder_id,
-                    "time": reminder_time.strftime("%Y-%m-%d %I:%M %p"),
+                    "time": reminder_time.strftime("%Y-%m-%d %I:%M:%S %p"),
                     "message": message,
                     "status": "pending"
                 })
-        
+
         return {
             "status": "success",
             "due_count": len(due_reminders),
@@ -1334,7 +1352,7 @@ def check_reminders() -> dict:
             "due_reminders": due_reminders,
             "active_reminders": active_reminders
         }
-        
+
     except Exception as e:
         return {
             "status": "error",
@@ -1434,9 +1452,7 @@ def get_response(conversation_messages, model_name='gemma3', online=False,
     if not isinstance(conversation_messages, list):
         return "Invalid message format. Expected list of messages."
     
-    # CRITICAL FIX: Update the global conversation_history to stay in sync
     global conversation_history
-    conversation_history.clear()
     conversation_history.extend(conversation_messages)
 
     try:
