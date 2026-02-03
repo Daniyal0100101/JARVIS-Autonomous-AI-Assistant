@@ -9,10 +9,19 @@ import random
 import time
 import hashlib
 import getpass
+import msvcrt
+import os
+import sys
 from modules.text_to_speech import speak
 from modules.speech_recognition import listen, sr
 from modules.system_control import is_connected
-from modules.utils import greet, handle_query
+from modules.utils import (
+    greet,
+    handle_query,
+    clear_conversation_history,
+    start_schedule_runner,
+    stop_schedule_runner,
+)
 from modules import password as PASSWORD
 from modules.task_daemon import initialize_daemon, shutdown_daemon
 
@@ -26,6 +35,55 @@ from rich.align import Align
 from rich import box
 
 console = Console()
+
+def clear_console():
+    """Clear the terminal to prevent duplicated panels on mode selection."""
+    console.clear()
+    if os.name == "nt":
+        os.system("cls")
+    else:
+        os.system("clear")
+
+SLASH_COMMANDS = {
+    "/help": "Show available slash commands",
+    "/clear": "Clear chat history and console",
+    "/model": "Show current provider (hosted/local)",
+    "/status": "Show connection status and mode",
+    "/exit": "Exit the assistant",
+}
+SLASH_COMMAND_LIST = list(SLASH_COMMANDS.keys())
+
+def _get_slash_suggestions(buffer: str):
+    if not buffer.startswith("/"):
+        return []
+    prefix = buffer.lower()
+    return [cmd for cmd in SLASH_COMMAND_LIST if cmd.startswith(prefix)]
+
+def _render_input(prompt: str, buffer: str, suggestions, selected_index: int, last_count: int) -> int:
+    if last_count:
+        sys.stdout.write(f"\x1b[{last_count}A")
+        sys.stdout.write("\x1b[J")
+    sys.stdout.write("\r\x1b[2K" + prompt + buffer)
+
+    if suggestions:
+        for idx, cmd in enumerate(suggestions):
+            marker = ">" if idx == selected_index else " "
+            desc = SLASH_COMMANDS.get(cmd, "")
+            line = f"{marker} {cmd} - {desc}" if desc else f"{marker} {cmd}"
+            sys.stdout.write("\n" + line)
+        sys.stdout.write(f"\x1b[{len(suggestions)}A")
+        sys.stdout.write("\r")
+        sys.stdout.write(f"\x1b[{len(prompt) + len(buffer)}C")
+
+    sys.stdout.flush()
+    return len(suggestions)
+
+def _finalize_input(prompt: str, buffer: str, last_count: int) -> None:
+    if last_count:
+        sys.stdout.write(f"\x1b[{last_count}A")
+        sys.stdout.write("\x1b[J")
+    sys.stdout.write("\r\x1b[2K" + prompt + buffer + "\n")
+    sys.stdout.flush()
 
 # Disable all logging in the application
 logging.disable(logging.CRITICAL)
@@ -130,9 +188,145 @@ def get_farewell_message():
     awaiting = "Awaiting further instructions."
     return f"{random.choice(farewell_messages)} {awaiting}"
 
+def select_start_mode(online):
+    """Prompt the user to select the startup mode using arrow keys."""
+    options = ["Voice Mode", "Text Mode"]
+    selected_index = 0 if online else 1
+    instructions = "Use Up/Down arrows, then press Enter."
+    min_width = 40
+    min_height = 8
+
+    width = console.size.width
+    height = console.size.height
+    if width < min_width or height < min_height:
+        prompt = "Select mode: [V]oice / [T]ext: "
+        while True:
+            choice = input(prompt).strip().lower()
+            if choice in {"v", "voice"}:
+                return "voice" if online else "text"
+            if choice in {"t", "text"}:
+                return "text"
+
+    while True:
+        clear_console()
+        console.print(Panel.fit("[bold cyan]Select Startup Mode[/bold cyan]", box=box.ROUNDED))
+        console.print(f"[dim]{instructions}[/dim]\n")
+
+        for index, label in enumerate(options):
+            if index == selected_index:
+                console.print(f"[bold green]> {label}[/bold green]")
+            else:
+                console.print(f"  {label}")
+
+        key = msvcrt.getch()
+        if key == b"\r":
+            chosen = "voice" if selected_index == 0 else "text"
+            if chosen == "voice" and not online:
+                console.print("[yellow]Voice mode requires an online connection. Defaulting to text mode.[/yellow]")
+                speak("Voice mode requires an online connection. Defaulting to text mode.")
+                time.sleep(0.8)
+                clear_console()
+                return "text"
+            clear_console()
+            return chosen
+
+        if key in (b"\x00", b"\xe0"):
+            arrow_key = msvcrt.getch()
+            if arrow_key == b"H":
+                selected_index = (selected_index - 1) % len(options)
+            elif arrow_key == b"P":
+                selected_index = (selected_index + 1) % len(options)
+
+def prompt_user_input():
+    """Render a cleaner input prompt for text mode."""
+    min_width = 50
+    min_height = 8
+
+    width = console.size.width
+    height = console.size.height
+    if width < min_width or height < min_height:
+        return input("\nYou > ")
+
+    prompt = "You > "
+    buffer = ""
+    last_count = 0
+    selected_index = 0
+
+    sys.stdout.write(prompt)
+    sys.stdout.flush()
+
+    while True:
+        char = msvcrt.getwch()
+
+        if char in ("\r", "\n"):
+            _finalize_input(prompt, buffer, last_count)
+            return buffer.strip()
+        if char == "\t":
+            suggestions = _get_slash_suggestions(buffer)
+            if suggestions:
+                buffer = suggestions[selected_index]
+        elif char in ("\x08", "\x7f"):
+            buffer = buffer[:-1]
+        elif char in ("\x03",):
+            raise KeyboardInterrupt
+        elif char in ("\x00", "\xe0"):
+            arrow = msvcrt.getwch()
+            if arrow in ("H", "P"):
+                suggestions = _get_slash_suggestions(buffer)
+                if suggestions:
+                    if arrow == "H":
+                        selected_index = (selected_index - 1) % len(suggestions)
+                    else:
+                        selected_index = (selected_index + 1) % len(suggestions)
+            continue
+        else:
+            if char.isprintable():
+                buffer += char
+
+        suggestions = _get_slash_suggestions(buffer)
+        if suggestions:
+            selected_index = min(selected_index, len(suggestions) - 1)
+        else:
+            selected_index = 0
+
+        last_count = _render_input(prompt, buffer, suggestions, selected_index, last_count)
+
+def handle_slash_command(query: str, mode: str, online: bool):
+    if not query.startswith("/"):
+        return None
+
+    command = query.strip().split()[0].lower()
+    if command == "/help":
+        message = "Available commands: " + ", ".join(SLASH_COMMAND_LIST)
+    elif command == "/clear":
+        clear_conversation_history()
+        clear_console()
+        message = "Chat history cleared."
+    elif command == "/model":
+        provider = "Hosted (Gemini)" if online else "Local (Ollama)"
+        message = f"Current provider: {provider}."
+    elif command == "/status":
+        connection = "Online" if is_connected() else "Offline"
+        message = f"Status: {connection}. Mode: {mode}."
+    elif command == "/exit":
+        farewell = get_farewell_message()
+        console.print(f"[bold magenta]{farewell}[/bold magenta]")
+        speak(farewell)
+        return None
+    else:
+        message = "Unknown command. Type /help to see available commands."
+
+    console.print(f"[cyan]{message}[/cyan]")
+    speak(message)
+    return mode
+
 def handle_query_input(query, mode, online):
     """Process a query, possibly changing mode or exiting the loop."""
     query_lower = query.lower()
+
+    if query_lower.startswith("/"):
+        command_result = handle_slash_command(query, mode, online)
+        return command_result
 
     if "switch to" in query_lower:
         return switch_mode(query, mode, online)
@@ -173,7 +367,11 @@ def main():
     
     # Initialize background daemon for autonomous reminders/tasks
     daemon_callback_message = lambda data: speak(f"Reminder: {data.get('message', 'No message')}") if 'message' in data else None
-    initialize_daemon(speak_callback=daemon_callback_message)
+    daemon_callback_task = lambda data: speak(f"Task due: {data.get('name', 'Task')}")
+    initialize_daemon(speak_callback=daemon_callback_message, notify_callback=daemon_callback_task)
+
+    # Start schedule runner for legacy schedule-based tasks
+    start_schedule_runner()
     
     # Initialize interrupt handler silently
     try:
@@ -198,13 +396,13 @@ def main():
     console.print(separator)
     speak(greeting)
 
-    # Start in voice mode if online, otherwise fall back to text mode
-    mode = 'voice' if online else 'text'
+    # Let the user choose the startup mode (arrow keys)
+    mode = select_start_mode(online)
 
     try:
         while True:
             try:
-                query = listen() if mode == 'voice' else input("\nYou: ")
+                query = listen() if mode == 'voice' else prompt_user_input()
                 if query:
                     mode = handle_query_input(query, mode, online)
                     if mode is None:
@@ -249,10 +447,10 @@ def main():
     
     finally:
         # Cleanup daemon and interrupt handler
+        stop_schedule_runner()
         shutdown_daemon()
         if cleanup_interrupt_handler:
             cleanup_interrupt_handler()
 
 if __name__ == "__main__":
     main()
-

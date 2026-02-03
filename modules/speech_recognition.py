@@ -10,6 +10,7 @@ from .text_to_speech import speak
 import time
 import sys
 import tempfile
+import os
 import torch
 from faster_whisper import WhisperModel
 import threading
@@ -27,12 +28,22 @@ except ImportError:
 WHISPER_MODEL_SIZE = "base"  # change to "small", "medium", "large-v3" as needed
 WHISPER_DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
-# Load the Whisper model once
-whisper_model = WhisperModel(
-    WHISPER_MODEL_SIZE,
-    device=WHISPER_DEVICE,
-    compute_type="float16" if WHISPER_DEVICE == "cuda" else "int8"
-)
+_whisper_model = None
+_whisper_lock = threading.Lock()
+
+def _get_whisper_model():
+    """Load Whisper model lazily to avoid startup cost when voice mode is unused."""
+    global _whisper_model
+    if _whisper_model is not None:
+        return _whisper_model
+    with _whisper_lock:
+        if _whisper_model is None:
+            _whisper_model = WhisperModel(
+                WHISPER_MODEL_SIZE,
+                device=WHISPER_DEVICE,
+                compute_type="float16" if WHISPER_DEVICE == "cuda" else "int8"
+            )
+    return _whisper_model
 
 def animate_status(message, stop_event):
     """Threaded spinner animation for status updates in console."""
@@ -96,12 +107,21 @@ def listen(timeout=15, phrase_time_limit=60, max_retries=2):
                         recognize_thread.start()
 
                         # Transcribe audio using Faster-Whisper
+                        temp_path = None
                         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tf:
                             tf.write(audio.get_wav_data())
                             temp_path = tf.name
 
-                        segments, _ = whisper_model.transcribe(temp_path, beam_size=7)  # Increased beam_size for better accuracy
-                        text = " ".join([seg.text for seg in segments]).strip()
+                        try:
+                            whisper_model = _get_whisper_model()
+                            segments, _ = whisper_model.transcribe(temp_path, beam_size=7)  # Increased beam_size for better accuracy
+                            text = " ".join([seg.text for seg in segments]).strip()
+                        finally:
+                            if temp_path and os.path.exists(temp_path):
+                                try:
+                                    os.remove(temp_path)
+                                except Exception:
+                                    pass
 
                         stop_recognize.set()
                         recognize_thread.join()

@@ -15,6 +15,8 @@ from typing import Union, Optional
 import tempfile
 import uuid
 from .system_control import is_connected
+import asyncio, os, tempfile
+import edge_tts
 
 # Import interrupt handler
 try:
@@ -23,26 +25,21 @@ except ImportError:
     # Fallback if interrupt_handler doesn't exist yet
     tts_interrupt_event = threading.Event()
 
-def generate_audio(message: str, voice: str = "Matthew") -> Union[None, bytes]:
-    """
-    Generate audio from text using the StreamElements API.
+def generate_audio(message: str, voice: str = "en-US-GuyNeural"):
+    async def _run():
+        communicate = edge_tts.Communicate(message, voice=voice)
+        fd, path = tempfile.mkstemp(suffix=".mp3")
+        os.close(fd)
+        await communicate.save(path)
+        with open(path, "rb") as f:
+            data = f.read()
+        os.remove(path)
+        return data
 
-    :param message: Text message to convert to speech.
-    :param voice: Voice to use for speech synthesis.
-    :return: Audio content as bytes or None if the request fails.
-    """
-    # URL encode the message to handle spaces and special characters
-    encoded_message = requests.utils.quote(message)
-    url = f"https://api.streamelements.com/kappa/v2/speech?voice={voice}&text={encoded_message}"
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-    }
     try:
-        response = requests.get(url, headers=headers)
-        response.raise_for_status()
-        return response.content
-    except requests.RequestException as e:
-        print(f"Error fetching audio from StreamElements API: {e}")
+        return asyncio.run(_run())
+    except Exception as e:
+        print(f"Edge-TTS failed: {e}")
         return None
 
 def play_audio_with_pygame(filepath: str) -> None:
@@ -91,7 +88,7 @@ def play_audio_with_pygame(filepath: str) -> None:
         except Exception:
             pass
 
-def speak_audio(message: str, voice: str = "Matthew", folder: Optional[str] = None, extension: str = ".mp3") -> Union[None, str]:
+def speak_audio(message: str, voice: str = "en-GB-RyanNeural", folder: Optional[str] = None, extension: str = ".mp3") -> Union[None, str]:
     """
     Save generated audio to a file, play it using pygame, and delete the file afterward.
 
