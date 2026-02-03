@@ -36,6 +36,11 @@ except ImportError:
             try:
                 tty.setraw(sys.stdin.fileno())
                 ch = sys.stdin.read(1)
+                # Handle ANSI escape sequences for arrow keys
+                if ch == '\x1b':  # ESC character
+                    # Read the next two characters to complete the sequence
+                    seq = ch + sys.stdin.read(2)
+                    return seq.encode('utf-8')
                 return ch.encode('utf-8')
             finally:
                 termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
@@ -45,6 +50,11 @@ except ImportError:
             try:
                 tty.setraw(sys.stdin.fileno())
                 ch = sys.stdin.read(1)
+                # Handle ANSI escape sequences for arrow keys
+                if ch == '\x1b':  # ESC character
+                    # Read the next two characters to complete the sequence
+                    seq = ch + sys.stdin.read(2)
+                    return seq
                 return ch
             finally:
                 termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
@@ -235,7 +245,7 @@ def select_start_mode(online):
     width = console.size.width
     height = console.size.height
     if width < min_width or height < min_height:
-        prompt = "Select mode: [V]oice / [T]ext (or Q/quit to cancel): "
+        prompt = "Select mode: [V]oice / [T]ext (or Q/quit/Enter to cancel): "
         while True:
             try:
                 choice = input(prompt).strip().lower()
@@ -250,7 +260,6 @@ def select_start_mode(online):
             except (EOFError, KeyboardInterrupt):
                 console.print("\n[yellow]Mode selection cancelled.[/yellow]")
                 return None
-
     while True:
         clear_console()
         console.print(Panel.fit("[bold cyan]Select Startup Mode[/bold cyan]", box=box.ROUNDED))
@@ -278,11 +287,19 @@ def select_start_mode(online):
             clear_console()
             return None
 
+        # Handle arrow keys (both Windows and ANSI escape sequences)
         if key in (b"\x00", b"\xe0"):
+            # Windows-style arrow keys
             arrow_key = getch()
-            if arrow_key == b"H":
+            if arrow_key == b"H":  # Up arrow
                 selected_index = (selected_index - 1) % len(options)
-            elif arrow_key == b"P":
+            elif arrow_key == b"P":  # Down arrow
+                selected_index = (selected_index + 1) % len(options)
+        elif key.startswith(b"\x1b["):
+            # ANSI escape sequences for arrow keys
+            if key == b"\x1b[A":  # Up arrow
+                selected_index = (selected_index - 1) % len(options)
+            elif key == b"\x1b[B":  # Down arrow
                 selected_index = (selected_index + 1) % len(options)
 
 def prompt_user_input():
@@ -318,14 +335,26 @@ def prompt_user_input():
         elif char in ("\x03",):
             raise KeyboardInterrupt
         elif char in ("\x00", "\xe0"):
+            # Windows-style arrow keys
             arrow = getwch()
             if arrow in ("H", "P"):
                 suggestions = _get_slash_suggestions(buffer)
                 if suggestions:
-                    if arrow == "H":
+                    if arrow == "H":  # Up arrow
                         selected_index = (selected_index - 1) % len(suggestions)
-                    else:
+                    else:  # Down arrow
                         selected_index = (selected_index + 1) % len(suggestions)
+            continue
+        elif char.startswith("\x1b["):
+            # ANSI escape sequences for arrow keys
+            if char == "\x1b[A" or char == "\x1bOA":  # Up arrow
+                suggestions = _get_slash_suggestions(buffer)
+                if suggestions:
+                    selected_index = (selected_index - 1) % len(suggestions)
+            elif char == "\x1b[B" or char == "\x1bOB":  # Down arrow
+                suggestions = _get_slash_suggestions(buffer)
+                if suggestions:
+                    selected_index = (selected_index + 1) % len(suggestions)
             continue
         else:
             if char.isprintable():

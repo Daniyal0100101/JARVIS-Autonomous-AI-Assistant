@@ -87,8 +87,13 @@ def stop_schedule_runner() -> None:
         if _SCHEDULE_THREAD and _SCHEDULE_THREAD.is_alive():
             _SCHEDULE_THREAD.join(timeout=2.0)  # Wait up to 2 seconds for thread to finish
         
-        _SCHEDULE_THREAD = None
-        _SCHEDULE_STOP_EVENT.clear()  # Reset event for potential restart
+        # Only reset state if thread actually terminated
+        if _SCHEDULE_THREAD is None or not _SCHEDULE_THREAD.is_alive():
+            _SCHEDULE_THREAD = None
+            _SCHEDULE_STOP_EVENT.clear()  # Reset event for potential restart
+        else:
+            # Thread didn't terminate; leave stop event set so it eventually exits
+            pass
 
 def clear_conversation_history():
     """
