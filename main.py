@@ -9,9 +9,45 @@ import random
 import time
 import hashlib
 import getpass
-import msvcrt
 import os
 import sys
+
+# Cross-platform getch/getwch implementation
+try:
+    import msvcrt
+    def getch():
+        return msvcrt.getch()
+    def getwch():
+        return msvcrt.getwch()
+except ImportError:
+    # Fallback for non-Windows platforms
+    try:
+        import readchar
+        def getch():
+            return readchar.readchar().encode('utf-8')
+        def getwch():
+            return readchar.readchar()
+    except ImportError:
+        import tty
+        import termios
+        def getch():
+            fd = sys.stdin.fileno()
+            old_settings = termios.tcgetattr(fd)
+            try:
+                tty.setraw(sys.stdin.fileno())
+                ch = sys.stdin.read(1)
+                return ch.encode('utf-8')
+            finally:
+                termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+        def getwch():
+            fd = sys.stdin.fileno()
+            old_settings = termios.tcgetattr(fd)
+            try:
+                tty.setraw(sys.stdin.fileno())
+                ch = sys.stdin.read(1)
+                return ch
+            finally:
+                termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
 from modules.text_to_speech import speak
 from modules.speech_recognition import listen, sr
 from modules.system_control import is_connected
@@ -199,13 +235,21 @@ def select_start_mode(online):
     width = console.size.width
     height = console.size.height
     if width < min_width or height < min_height:
-        prompt = "Select mode: [V]oice / [T]ext: "
+        prompt = "Select mode: [V]oice / [T]ext (or Q/quit to cancel): "
         while True:
-            choice = input(prompt).strip().lower()
-            if choice in {"v", "voice"}:
-                return "voice" if online else "text"
-            if choice in {"t", "text"}:
-                return "text"
+            try:
+                choice = input(prompt).strip().lower()
+                if choice in {"q", "quit", ""}:
+                    console.print("[yellow]Mode selection cancelled.[/yellow]")
+                    return None
+                if choice in {"v", "voice"}:
+                    return "voice" if online else "text"
+                if choice in {"t", "text"}:
+                    return "text"
+                console.print("[red]Invalid choice. Please try again.[/red]")
+            except (EOFError, KeyboardInterrupt):
+                console.print("\n[yellow]Mode selection cancelled.[/yellow]")
+                return None
 
     while True:
         clear_console()
@@ -218,7 +262,7 @@ def select_start_mode(online):
             else:
                 console.print(f"  {label}")
 
-        key = msvcrt.getch()
+        key = getch()
         if key == b"\r":
             chosen = "voice" if selected_index == 0 else "text"
             if chosen == "voice" and not online:
@@ -229,9 +273,13 @@ def select_start_mode(online):
                 return "text"
             clear_console()
             return chosen
+        elif key in (b"q", b"Q"):
+            console.print("[yellow]Mode selection cancelled.[/yellow]")
+            clear_console()
+            return None
 
         if key in (b"\x00", b"\xe0"):
-            arrow_key = msvcrt.getch()
+            arrow_key = getch()
             if arrow_key == b"H":
                 selected_index = (selected_index - 1) % len(options)
             elif arrow_key == b"P":
@@ -256,7 +304,7 @@ def prompt_user_input():
     sys.stdout.flush()
 
     while True:
-        char = msvcrt.getwch()
+        char = getwch()
 
         if char in ("\r", "\n"):
             _finalize_input(prompt, buffer, last_count)
@@ -270,7 +318,7 @@ def prompt_user_input():
         elif char in ("\x03",):
             raise KeyboardInterrupt
         elif char in ("\x00", "\xe0"):
-            arrow = msvcrt.getwch()
+            arrow = getwch()
             if arrow in ("H", "P"):
                 suggestions = _get_slash_suggestions(buffer)
                 if suggestions:
@@ -398,6 +446,12 @@ def main():
 
     # Let the user choose the startup mode (arrow keys)
     mode = select_start_mode(online)
+    if mode is None:
+        # User cancelled mode selection
+        farewell = get_farewell_message()
+        console.print(f"[bold magenta]{farewell}[/bold magenta]")
+        speak(farewell)
+        return
 
     try:
         while True:

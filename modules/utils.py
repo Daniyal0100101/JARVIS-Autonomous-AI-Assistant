@@ -51,32 +51,44 @@ GLOBAL_PIPELINE_INSTANCE = None
 # Background scheduler runner for schedule-based tasks
 _SCHEDULE_THREAD = None
 _SCHEDULE_STOP_EVENT = threading.Event()
+_SCHEDULE_LOCK = threading.Lock()
 
 
 def start_schedule_runner(interval: float = 1.0) -> None:
     """Start a background thread to execute schedule.run_pending()."""
     global _SCHEDULE_THREAD
-    if _SCHEDULE_THREAD and _SCHEDULE_THREAD.is_alive():
-        return
+    
+    with _SCHEDULE_LOCK:
+        if _SCHEDULE_THREAD and _SCHEDULE_THREAD.is_alive():
+            return
 
-    _SCHEDULE_STOP_EVENT.clear()
+        _SCHEDULE_STOP_EVENT.clear()
 
-    def _runner():
-        while not _SCHEDULE_STOP_EVENT.is_set():
-            try:
-                schedule.run_pending()
-            except Exception:
-                # Best-effort scheduler loop; ignore task errors here
-                pass
-            _SCHEDULE_STOP_EVENT.wait(interval)
+        def _runner():
+            while not _SCHEDULE_STOP_EVENT.is_set():
+                try:
+                    schedule.run_pending()
+                except Exception:
+                    # Best-effort scheduler loop; ignore task errors here
+                    pass
+                _SCHEDULE_STOP_EVENT.wait(interval)
 
-    _SCHEDULE_THREAD = threading.Thread(target=_runner, daemon=True)
-    _SCHEDULE_THREAD.start()
+        _SCHEDULE_THREAD = threading.Thread(target=_runner, daemon=True)
+        _SCHEDULE_THREAD.start()
 
 
 def stop_schedule_runner() -> None:
     """Stop the background scheduler thread."""
-    _SCHEDULE_STOP_EVENT.set()
+    global _SCHEDULE_THREAD
+    
+    with _SCHEDULE_LOCK:
+        _SCHEDULE_STOP_EVENT.set()
+        
+        if _SCHEDULE_THREAD and _SCHEDULE_THREAD.is_alive():
+            _SCHEDULE_THREAD.join(timeout=2.0)  # Wait up to 2 seconds for thread to finish
+        
+        _SCHEDULE_THREAD = None
+        _SCHEDULE_STOP_EVENT.clear()  # Reset event for potential restart
 
 def clear_conversation_history():
     """
@@ -472,7 +484,7 @@ class ToolExecutionPipeline:
 
                     # Keep system prompt + last 19 entries
                     new_hist = preserved + conversation[-19:]
-                    # Update the global history list in-place so other references stay vali
+                    # Update the global history list in-place so other references stay valid
                     GLOBAL_CONVERSATION_HISTORY[:] = new_hist
 
                     # Ensure local reference points to the updated global list

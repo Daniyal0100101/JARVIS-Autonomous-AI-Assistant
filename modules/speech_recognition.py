@@ -109,22 +109,22 @@ def listen(timeout=15, phrase_time_limit=60, max_retries=2):
                         # Transcribe audio using Faster-Whisper
                         temp_path = None
                         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tf:
-                            tf.write(audio.get_wav_data())
                             temp_path = tf.name
+                            tf.write(audio.get_wav_data())
 
                         try:
                             whisper_model = _get_whisper_model()
                             segments, _ = whisper_model.transcribe(temp_path, beam_size=7)  # Increased beam_size for better accuracy
                             text = " ".join([seg.text for seg in segments]).strip()
                         finally:
+                            # Always stop spinner and clean up temp file
+                            stop_recognize.set()
+                            recognize_thread.join()
                             if temp_path and os.path.exists(temp_path):
                                 try:
                                     os.remove(temp_path)
                                 except Exception:
                                     pass
-
-                        stop_recognize.set()
-                        recognize_thread.join()
 
                         if text:
                             print(f"\rUser said: {text}")

@@ -10,25 +10,35 @@ import subprocess
 import shlex
 import platform
 import time
+import threading
 
 _CONNECTION_CACHE = {"value": None, "ts": 0.0}
 _CONNECTION_TTL = 10.0
+_CONNECTION_LOCK = threading.Lock()
 
 def is_connected():
     """Return True if a simple TCP connection to a known host succeeds."""
     now = time.monotonic()
-    cached = _CONNECTION_CACHE.get("value")
-    if cached is not None and (now - _CONNECTION_CACHE.get("ts", 0.0)) < _CONNECTION_TTL:
-        return cached
+    
+    # Check cache with lock
+    with _CONNECTION_LOCK:
+        cached = _CONNECTION_CACHE.get("value")
+        if cached is not None and (now - _CONNECTION_CACHE.get("ts", 0.0)) < _CONNECTION_TTL:
+            return cached
+    
+    # Perform connection test outside lock
     try:
-        # Attempt to connect to a known website (Google)
         conn = socket.create_connection(("www.google.com", 80), timeout=1.5)
         conn.close()
         result = True
     except OSError:
         result = False
-    _CONNECTION_CACHE["value"] = result
-    _CONNECTION_CACHE["ts"] = now
+    
+    # Update cache with lock
+    with _CONNECTION_LOCK:
+        _CONNECTION_CACHE["value"] = result
+        _CONNECTION_CACHE["ts"] = now
+    
     return result
 
 def _import_pyautogui():

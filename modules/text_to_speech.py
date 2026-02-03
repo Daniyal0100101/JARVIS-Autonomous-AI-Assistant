@@ -30,11 +30,16 @@ def generate_audio(message: str, voice: str = "en-US-GuyNeural"):
         communicate = edge_tts.Communicate(message, voice=voice)
         fd, path = tempfile.mkstemp(suffix=".mp3")
         os.close(fd)
-        await communicate.save(path)
-        with open(path, "rb") as f:
-            data = f.read()
-        os.remove(path)
-        return data
+        try:
+            await communicate.save(path)
+            with open(path, "rb") as f:
+                data = f.read()
+            return data
+        finally:
+            try:
+                os.remove(path)
+            except Exception:
+                pass
 
     try:
         return asyncio.run(_run())
