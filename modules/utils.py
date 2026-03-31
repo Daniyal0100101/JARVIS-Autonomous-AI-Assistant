@@ -1638,7 +1638,7 @@ def handle_gesture_control():
     except Exception as e:
         return f"Error activating gesture control: {e}"
 
-def get_response(conversation_messages, model_name='qwen2.5-coder', online=False,
+def get_response(conversation_messages, model_name='ministral-3:8b', online=False,
                  gemini_api_key=None, gemini_model="gemini-2.5-flash"):
     import google.genai as genai
     from google.genai import types
